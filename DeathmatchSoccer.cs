@@ -36,30 +36,97 @@ namespace Oxide.Plugins
         private string ImgGoalBanner = "https://i.imgur.com/Jb9y1Xm.png";   
 
         [PluginReference] Plugin ImageLibrary;
+        [PluginReference] Plugin Skins;
+
+        // CUSTOM SKIN IDS (Configure these for each team)
+        private Dictionary<string, TeamSkins> teamSkins = new Dictionary<string, TeamSkins>
+        {
+            { "blue", new TeamSkins { 
+                TshirtSkin = 0,      // Set custom skin ID for blue team tshirt
+                PantsSkin = 0,       // Set custom skin ID for blue team pants
+                TorsoSkin = 0,       // Set custom skin ID for blue team metal.plate.torso
+                FacemaskSkin = 0,    // Set custom skin ID for blue team metal.facemask
+                WeaponSkin = 0,      // Set custom skin ID for blue team thompson
+                GoaliePantsSkin = 0, // Set custom skin ID for blue goalie heavy.plate.pants
+                GoalieJacketSkin = 0,// Set custom skin ID for blue goalie heavy.plate.jacket
+                GoalieWeaponSkin = 0 // Set custom skin ID for blue goalie spas12
+            }},
+            { "red", new TeamSkins { 
+                TshirtSkin = 0,      
+                PantsSkin = 0,       
+                TorsoSkin = 0,       
+                FacemaskSkin = 0,    
+                WeaponSkin = 0,      
+                GoaliePantsSkin = 0, 
+                GoalieJacketSkin = 0,
+                GoalieWeaponSkin = 0 
+            }},
+            { "black", new TeamSkins { 
+                TshirtSkin = 0,      
+                PantsSkin = 0,       
+                TorsoSkin = 0,       
+                FacemaskSkin = 0,    
+                WeaponSkin = 0,      
+                GoaliePantsSkin = 0, 
+                GoalieJacketSkin = 0,
+                GoalieWeaponSkin = 0 
+            }}
+        };
+        
+        private class TeamSkins
+        {
+            public ulong TshirtSkin { get; set; }
+            public ulong PantsSkin { get; set; }
+            public ulong TorsoSkin { get; set; }
+            public ulong FacemaskSkin { get; set; }
+            public ulong WeaponSkin { get; set; }
+            public ulong GoaliePantsSkin { get; set; }
+            public ulong GoalieJacketSkin { get; set; }
+            public ulong GoalieWeaponSkin { get; set; }
+        }
 
         // STATE
         private BaseEntity activeBall;
         private BasePlayer lastKicker; 
-        private Vector3 redGoalPos, blueGoalPos, centerPos;
-        private Quaternion redGoalRot, blueGoalRot;
+        private Vector3 redGoalPos, blueGoalPos, blackGoalPos, centerPos;
+        private Quaternion redGoalRot, blueGoalRot, blackGoalRot;
         
         private int scoreRed = 0;
         private int scoreBlue = 0;
+        private int scoreBlack = 0;
         private bool gameActive = false; 
         private bool matchStarted = false; 
         private bool debugActive = false;
+        
+        // TEAM CONFIGURATIONS
+        private Dictionary<string, TeamConfig> teamConfigs = new Dictionary<string, TeamConfig>
+        {
+            { "blue", new TeamConfig { Name = "SHELL-SEA FOOTBALL CLUB", Tag = "GRUB", Color = "0.2 0.4 1", HexColor = "#3366FF" } },
+            { "red", new TeamConfig { Name = "Loot-pool F.C.", Tag = "DOORCAMPER", Color = "1 0.2 0.2", HexColor = "#FF3333" } },
+            { "black", new TeamConfig { Name = "Project Zerg-Germain", Tag = "ROAMER", Color = "0.2 0.2 0.2", HexColor = "#333333" } }
+        };
         
         private Timer gameTimer, tickerTimer, hudTimer, debugTimer;
         private Dictionary<ulong, bool> ballRangeState = new Dictionary<ulong, bool>();
         
         // TICKER
-        private List<string> tickerMessages = new List<string> { "DEATHMATCH SOCCER", "SHOOT BALL TO SCORE", "KILL ENEMIES", "FIRST TO 5 WINS" };
+        private List<string> tickerMessages = new List<string> { "3-TEAM DEATHMATCH SOCCER", "SHOOT BALL TO SCORE", "KILL ENEMIES", "FIRST TO 5 WINS", "BLUE vs RED vs BLACK" };
         private int tickerIndex = 0;
 
         // TEAMS
         private List<ulong> redTeam = new List<ulong>();
         private List<ulong> blueTeam = new List<ulong>();
-        private Dictionary<ulong, string> playerRoles = new Dictionary<ulong, string>(); 
+        private List<ulong> blackTeam = new List<ulong>();
+        private Dictionary<ulong, string> playerRoles = new Dictionary<ulong, string>();
+        
+        // TEAM CONFIG CLASS
+        private class TeamConfig
+        {
+            public string Name { get; set; }
+            public string Tag { get; set; }
+            public string Color { get; set; }
+            public string HexColor { get; set; }
+        }
 
         // DATA FILE
         private const string DataFileName = "DeathmatchSoccer_Data";
@@ -71,9 +138,11 @@ namespace Oxide.Plugins
         {
             public float Rx, Ry, Rz; // Red Pos
             public float Bx, By, Bz; // Blue Pos
+            public float Blx, Bly, Blz; // Black Pos
             public float Cx, Cy, Cz; // Center Pos
             public float Rqx, Rqy, Rqz, Rqw; // Red Rot
             public float Bqx, Bqy, Bqz, Bqw; // Blue Rot
+            public float Blqx, Blqy, Blqz, Blqw; // Black Rot
             public float Gw, Gh, Gd; // Dimensions
         }
 
@@ -83,9 +152,11 @@ namespace Oxide.Plugins
             {
                 Rx = redGoalPos.x, Ry = redGoalPos.y, Rz = redGoalPos.z,
                 Bx = blueGoalPos.x, By = blueGoalPos.y, Bz = blueGoalPos.z,
+                Blx = blackGoalPos.x, Bly = blackGoalPos.y, Blz = blackGoalPos.z,
                 Cx = centerPos.x, Cy = centerPos.y, Cz = centerPos.z,
                 Rqx = redGoalRot.x, Rqy = redGoalRot.y, Rqz = redGoalRot.z, Rqw = redGoalRot.w,
                 Bqx = blueGoalRot.x, Bqy = blueGoalRot.y, Bqz = blueGoalRot.z, Bqw = blueGoalRot.w,
+                Blqx = blackGoalRot.x, Blqy = blackGoalRot.y, Blqz = blackGoalRot.z, Blqw = blackGoalRot.w,
                 Gw = GoalWidth, Gh = GoalHeight, Gd = GoalDepth
             };
             Interface.Oxide.DataFileSystem.WriteObject(DataFileName, data);
@@ -100,9 +171,11 @@ namespace Oxide.Plugins
                 {
                     redGoalPos = new Vector3(data.Rx, data.Ry, data.Rz);
                     blueGoalPos = new Vector3(data.Bx, data.By, data.Bz);
+                    blackGoalPos = new Vector3(data.Blx, data.Bly, data.Blz);
                     centerPos = new Vector3(data.Cx, data.Cy, data.Cz);
                     redGoalRot = new Quaternion(data.Rqx, data.Rqy, data.Rqz, data.Rqw);
                     blueGoalRot = new Quaternion(data.Bqx, data.Bqy, data.Bqz, data.Bqw);
+                    blackGoalRot = new Quaternion(data.Blqx, data.Blqy, data.Blqz, data.Blqw);
                     if (data.Gw > 0) { GoalWidth = data.Gw; GoalHeight = data.Gh; GoalDepth = data.Gd; }
                     Puts("Arena Data Loaded.");
                 }
@@ -138,6 +211,7 @@ namespace Oxide.Plugins
                 CuiHelper.DestroyUi(player, "GoalBanner");
                 CuiHelper.DestroyUi(player, "BallRangeHUD");
                 CuiHelper.DestroyUi(player, "RoleSelectUI");
+                CuiHelper.DestroyUi(player, "TeamSelectUI");
                 CuiHelper.DestroyUi(player, "LeashHUD");
             }
         }
@@ -168,7 +242,7 @@ namespace Oxide.Plugins
             if (!player.IsAdmin) return;
             if (centerPos == Vector3.zero) { SendReply(player, "Error: Set Center first!"); return; }
             
-            scoreRed = 0; scoreBlue = 0;
+            scoreRed = 0; scoreBlue = 0; scoreBlack = 0;
             gameActive = true; matchStarted = true;
             
             SpawnBall();
@@ -181,8 +255,8 @@ namespace Oxide.Plugins
             if (hudTimer != null) hudTimer.Destroy();
             hudTimer = timer.Repeat(0.5f, 0, HudLoop);
 
-            PrintToChat("MATCH STARTED!");
-            CallMiddleware("EVENT: MATCH_START. Score 0-0.");
+            PrintToChat("MATCH STARTED! 3 Teams Battle!");
+            CallMiddleware("EVENT: MATCH_START. Score 0-0-0. 3-Team Battle.");
         }
 
         [ChatCommand("goal_size")]
@@ -199,6 +273,7 @@ namespace Oxide.Plugins
 
         [ChatCommand("set_red")] private void CmdSetRed(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ redGoalPos=p.transform.position; redGoalRot=p.transform.rotation; SendReply(p, "Red Set."); DrawGoal(p, redGoalPos, redGoalRot, Color.red, 5f); }}
         [ChatCommand("set_blue")] private void CmdSetBlue(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blueGoalPos=p.transform.position; blueGoalRot=p.transform.rotation; SendReply(p, "Blue Set."); DrawGoal(p, blueGoalPos, blueGoalRot, Color.blue, 5f); }}
+        [ChatCommand("set_black")] private void CmdSetBlack(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos=p.transform.position; blackGoalRot=p.transform.rotation; SendReply(p, "Black Set."); DrawGoal(p, blackGoalPos, blackGoalRot, Color.black, 5f); }}
         [ChatCommand("set_center")] private void CmdSetCenter(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ centerPos=p.transform.position; SendReply(p, "Center Set."); }}
         [ChatCommand("reset_ball")] private void CmdResetBall(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ SpawnBall(); SendReply(p, "Ball Reset."); }}
         
@@ -215,22 +290,124 @@ namespace Oxide.Plugins
                 debugTimer = timer.Repeat(1.0f, 0, () => {
                     if (redGoalPos != Vector3.zero) DrawGoal(player, redGoalPos, redGoalRot, Color.red, 1.0f);
                     if (blueGoalPos != Vector3.zero) DrawGoal(player, blueGoalPos, blueGoalRot, Color.blue, 1.0f);
+                    if (blackGoalPos != Vector3.zero) DrawGoal(player, blackGoalPos, blackGoalRot, Color.black, 1.0f);
                 });
             }
             else SendReply(player, "Debug OFF.");
         }
 
+        [ChatCommand("setskin")]
+        private void CmdSetSkin(BasePlayer player, string command, string[] args)
+        {
+            if (!player.IsAdmin) return;
+            if (args.Length < 3)
+            {
+                SendReply(player, "Usage: /setskin <team> <item> <skinId>");
+                SendReply(player, "Teams: blue, red, black");
+                SendReply(player, "Items: tshirt, pants, torso, facemask, weapon, goaliepants, goaliejacket, goalieweapon");
+                SendReply(player, "Example: /setskin blue tshirt 123456789");
+                return;
+            }
+            
+            string team = args[0].ToLower();
+            string item = args[1].ToLower();
+            if (!ulong.TryParse(args[2], out ulong skinId))
+            {
+                SendReply(player, "Invalid skin ID. Must be a number.");
+                return;
+            }
+            
+            if (!teamSkins.ContainsKey(team))
+            {
+                SendReply(player, "Invalid team. Use: blue, red, or black");
+                return;
+            }
+            
+            var skins = teamSkins[team];
+            switch (item)
+            {
+                case "tshirt": skins.TshirtSkin = skinId; break;
+                case "pants": skins.PantsSkin = skinId; break;
+                case "torso": skins.TorsoSkin = skinId; break;
+                case "facemask": skins.FacemaskSkin = skinId; break;
+                case "weapon": skins.WeaponSkin = skinId; break;
+                case "goaliepants": skins.GoaliePantsSkin = skinId; break;
+                case "goaliejacket": skins.GoalieJacketSkin = skinId; break;
+                case "goalieweapon": skins.GoalieWeaponSkin = skinId; break;
+                default:
+                    SendReply(player, "Invalid item name.");
+                    return;
+            }
+            
+            SendReply(player, $"Set {team} {item} skin to {skinId}");
+        }
+
+        [ChatCommand("showskins")]
+        private void CmdShowSkins(BasePlayer player, string command, string[] args)
+        {
+            if (!player.IsAdmin) return;
+            SendReply(player, "=== TEAM SKIN IDs ===");
+            foreach (var kvp in teamSkins)
+            {
+                var team = kvp.Key;
+                var skins = kvp.Value;
+                SendReply(player, $"--- {team.ToUpper()} ---");
+                SendReply(player, $"Tshirt: {skins.TshirtSkin}");
+                SendReply(player, $"Pants: {skins.PantsSkin}");
+                SendReply(player, $"Torso: {skins.TorsoSkin}");
+                SendReply(player, $"Facemask: {skins.FacemaskSkin}");
+                SendReply(player, $"Thompson: {skins.WeaponSkin}");
+                SendReply(player, $"Goalie Pants: {skins.GoaliePantsSkin}");
+                SendReply(player, $"Goalie Jacket: {skins.GoalieJacketSkin}");
+                SendReply(player, $"Goalie SPAS-12: {skins.GoalieWeaponSkin}");
+            }
+        }
+
         // ==========================================
         // 5. JOINING & TEAMS
         // ==========================================
+        [ChatCommand("teams")]
+        private void CmdTeams(BasePlayer player, string command, string[] args)
+        {
+            ShowTeamSelectUI(player);
+        }
+
         [ChatCommand("join")]
         private void CmdJoin(BasePlayer player, string command, string[] args)
         {
-            if (args.Length == 0) { SendReply(player, "Usage: /join red  OR  /join blue"); return; }
+            if (args.Length == 0) { 
+                ShowTeamSelectUI(player);
+                return; 
+            }
             string team = args[0].ToLower();
 
             redTeam.Remove(player.userID);
             blueTeam.Remove(player.userID);
+            blackTeam.Remove(player.userID);
+            playerRoles.Remove(player.userID);
+            ballRangeState.Remove(player.userID);
+            
+            CuiHelper.DestroyUi(player, "BallRangeHUD"); 
+            CuiHelper.DestroyUi(player, "LeashHUD");
+            CuiHelper.DestroyUi(player, "TeamSelectUI");
+
+            if (team == "red") { redTeam.Add(player.userID); CheckRole(player, "red"); }
+            else if (team == "blue") { blueTeam.Add(player.userID); CheckRole(player, "blue"); }
+            else if (team == "black") { blackTeam.Add(player.userID); CheckRole(player, "black"); }
+            else SendReply(player, "Invalid team. Use: blue, red, or black");
+        }
+
+        [ConsoleCommand("select_team")]
+        private void CmdSelectTeam(ConsoleSystem.Arg arg)
+        {
+            var player = arg.Player();
+            if (player == null || arg.Args == null || arg.Args.Length < 1) return;
+            CuiHelper.DestroyUi(player, "TeamSelectUI");
+            
+            string team = arg.Args[0].ToLower();
+            redTeam.Remove(player.userID);
+            blueTeam.Remove(player.userID);
+            blackTeam.Remove(player.userID);
             playerRoles.Remove(player.userID);
             ballRangeState.Remove(player.userID);
             
@@ -239,13 +416,13 @@ namespace Oxide.Plugins
 
             if (team == "red") { redTeam.Add(player.userID); CheckRole(player, "red"); }
             else if (team == "blue") { blueTeam.Add(player.userID); CheckRole(player, "blue"); }
-            else SendReply(player, "Invalid team.");
+            else if (team == "black") { blackTeam.Add(player.userID); CheckRole(player, "black"); }
         }
 
         private void CheckRole(BasePlayer player, string team)
         {
             int goalies = 0;
-            List<ulong> list = (team == "red") ? redTeam : blueTeam;
+            List<ulong> list = (team == "red") ? redTeam : (team == "blue") ? blueTeam : blackTeam;
             foreach(ulong id in list) if(playerRoles.ContainsKey(id) && playerRoles[id] == "Goalie") goalies++;
 
             if(goalies == 0) ShowRoleUI(player, team);
@@ -265,8 +442,10 @@ namespace Oxide.Plugins
         {
             playerRoles[player.userID] = role;
             if (centerPos != Vector3.zero) {
-                Vector3 goalPos = redTeam.Contains(player.userID) ? redGoalPos : blueGoalPos;
-                Quaternion goalRot = redTeam.Contains(player.userID) ? redGoalRot : blueGoalRot;
+                Vector3 goalPos = redTeam.Contains(player.userID) ? redGoalPos : 
+                                 blueTeam.Contains(player.userID) ? blueGoalPos : blackGoalPos;
+                Quaternion goalRot = redTeam.Contains(player.userID) ? redGoalRot : 
+                                    blueTeam.Contains(player.userID) ? blueGoalRot : blackGoalRot;
                 Vector3 spawn = goalPos + (goalRot * Vector3.forward * 5f);
                 player.Teleport(spawn);
             }
@@ -280,20 +459,52 @@ namespace Oxide.Plugins
         private void GiveKit(BasePlayer player, string role)
         {
             player.inventory.Strip();
-            if (role == "Striker") {
-                player.inventory.GiveItem(ItemManager.CreateByName("hazmatsuit", 1), player.inventory.containerWear);
-                player.inventory.GiveItem(ItemManager.CreateByName("pistol.semiauto", 1), player.inventory.containerBelt);
-                player.SetMaxHealth(100); player.health = 100;
-            } else {
-                player.inventory.GiveItem(ItemManager.CreateByName("metal.plate.torso", 1), player.inventory.containerWear);
-                player.inventory.GiveItem(ItemManager.CreateByName("metal.facemask", 1), player.inventory.containerWear);
-                player.inventory.GiveItem(ItemManager.CreateByName("pants", 1), player.inventory.containerWear);
-                player.inventory.GiveItem(ItemManager.CreateByName("pump.shotgun", 1), player.inventory.containerBelt);
-                player.SetMaxHealth(200); player.health = 200;
+            
+            // Determine which team the player is on
+            string team = redTeam.Contains(player.userID) ? "red" : 
+                         blueTeam.Contains(player.userID) ? "blue" : "black";
+            TeamSkins skins = teamSkins[team];
+            
+            if (role == "Striker") 
+            {
+                // Striker Kit (All positions except Goalie)
+                GiveItemWithSkin(player, "tshirt", 1, skins.TshirtSkin, player.inventory.containerWear);
+                GiveItemWithSkin(player, "pants", 1, skins.PantsSkin, player.inventory.containerWear);
+                GiveItemWithSkin(player, "metal.plate.torso", 1, skins.TorsoSkin, player.inventory.containerWear);
+                GiveItemWithSkin(player, "metal.facemask", 1, skins.FacemaskSkin, player.inventory.containerWear);
+                GiveItemWithSkin(player, "smg.thompson", 1, skins.WeaponSkin, player.inventory.containerBelt);
+                player.inventory.GiveItem(ItemManager.CreateByName("syringe.medical", 5), player.inventory.containerMain);
+                player.inventory.GiveItem(ItemManager.CreateByName("barricade.wood.cover", 3), player.inventory.containerMain);
+                player.inventory.GiveItem(ItemManager.CreateByName("ammo.pistol", 200), player.inventory.containerMain);
+                player.SetMaxHealth(100); 
+                player.health = 100;
+            } 
+            else // Goalie
+            {
+                GiveItemWithSkin(player, "tshirt", 1, skins.TshirtSkin, player.inventory.containerWear);
+                GiveItemWithSkin(player, "heavy.plate.pants", 1, skins.GoaliePantsSkin, player.inventory.containerWear);
+                GiveItemWithSkin(player, "heavy.plate.jacket", 1, skins.GoalieJacketSkin, player.inventory.containerWear);
+                GiveItemWithSkin(player, "metal.facemask", 1, skins.FacemaskSkin, player.inventory.containerWear);
+                GiveItemWithSkin(player, "shotgun.spas12", 1, skins.GoalieWeaponSkin, player.inventory.containerBelt);
+                player.inventory.GiveItem(ItemManager.CreateByName("syringe.medical", 10), player.inventory.containerMain);
+                player.inventory.GiveItem(ItemManager.CreateByName("ammo.shotgun", 64), player.inventory.containerMain);
+                player.SetMaxHealth(200); 
+                player.health = 200;
             }
-            player.inventory.GiveItem(ItemManager.CreateByName("mace", 1), player.inventory.containerBelt);
-            player.inventory.GiveItem(ItemManager.CreateByName("ammo.pistol", 100), player.inventory.containerMain);
-            player.inventory.GiveItem(ItemManager.CreateByName("ammo.handmade.shell", 20), player.inventory.containerMain);
+        }
+        
+        private void GiveItemWithSkin(BasePlayer player, string itemName, int amount, ulong skinId, ItemContainer container)
+        {
+            Item item = ItemManager.CreateByName(itemName, amount, skinId);
+            if (item != null)
+            {
+                // If Skins plugin is loaded and skinId is set, apply the skin
+                if (Skins != null && skinId > 0)
+                {
+                    item.skin = skinId;
+                }
+                player.inventory.GiveItem(item, container);
+            }
         }
 
         private void HudLoop()
@@ -305,6 +516,8 @@ namespace Oxide.Plugins
                 if (!playerRoles.ContainsKey(player.userID)) continue;
                 string role = playerRoles[player.userID];
                 bool isRed = redTeam.Contains(player.userID);
+                bool isBlue = blueTeam.Contains(player.userID);
+                bool isBlack = blackTeam.Contains(player.userID);
 
                 // BALL RANGE HUD
                 if (activeBall != null)
@@ -322,7 +535,7 @@ namespace Oxide.Plugins
                 // GOALIE LEASH
                 if (role == "Goalie")
                 {
-                    Vector3 home = isRed ? redGoalPos : blueGoalPos;
+                    Vector3 home = isRed ? redGoalPos : isBlue ? blueGoalPos : blackGoalPos;
                     if (home != Vector3.zero && Vector3.Distance(player.transform.position, home) > LeashRadius)
                     {
                         player.ShowToast(GameTip.Styles.Red_Normal, "RETURN TO GOAL!");
@@ -351,14 +564,27 @@ namespace Oxide.Plugins
             var container = new CuiElementContainer();
             string imgId = GetImg("Soccer_Bar_BG");
             
-            var panel = new CuiPanel { Image = { Color = "0 0 0 0.8" }, RectTransform = { AnchorMin = "0.3 0.90", AnchorMax = "0.7 0.98" }, CursorEnabled = false };
+            var panel = new CuiPanel { Image = { Color = "0 0 0 0.8" }, RectTransform = { AnchorMin = "0.25 0.90", AnchorMax = "0.75 0.98" }, CursorEnabled = false };
             if (!string.IsNullOrEmpty(imgId))
-                container.Add(new CuiElement { Name = "SoccerScoreboard", Parent = "Overlay", Components = { new CuiRawImageComponent { Png = imgId }, new CuiRectTransformComponent { AnchorMin = "0.3 0.90", AnchorMax = "0.7 0.98" } } });
+                container.Add(new CuiElement { Name = "SoccerScoreboard", Parent = "Overlay", Components = { new CuiRawImageComponent { Png = imgId }, new CuiRectTransformComponent { AnchorMin = "0.25 0.90", AnchorMax = "0.75 0.98" } } });
             else container.Add(panel, "Overlay", "SoccerScoreboard");
 
-            container.Add(new CuiLabel { Text = { Text = scoreRed.ToString(), FontSize = 28, Align = TextAnchor.MiddleRight, Color = "1 0.2 0.2 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.1 0", AnchorMax = "0.45 1" } }, "SoccerScoreboard");
-            container.Add(new CuiLabel { Text = { Text = scoreBlue.ToString(), FontSize = 28, Align = TextAnchor.MiddleLeft, Color = "0.2 0.4 1 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.55 0", AnchorMax = "0.9 1" } }, "SoccerScoreboard");
-            container.Add(new CuiLabel { Text = { Text = "VS", FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "1 1 1 0.5" }, RectTransform = { AnchorMin = "0.45 0", AnchorMax = "0.55 1" } }, "SoccerScoreboard");
+            // Three team display with team names
+            var blueConfig = teamConfigs["blue"];
+            var redConfig = teamConfigs["red"];
+            var blackConfig = teamConfigs["black"];
+            
+            // Blue Team (Left)
+            container.Add(new CuiLabel { Text = { Text = blueConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = blueConfig.Color + " 0.8" }, RectTransform = { AnchorMin = "0.05 0.6", AnchorMax = "0.28 0.95" } }, "SoccerScoreboard");
+            container.Add(new CuiLabel { Text = { Text = scoreBlue.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = blueConfig.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.05 0.1", AnchorMax = "0.28 0.7" } }, "SoccerScoreboard");
+            
+            // Red Team (Middle)
+            container.Add(new CuiLabel { Text = { Text = redConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = redConfig.Color + " 0.8" }, RectTransform = { AnchorMin = "0.36 0.6", AnchorMax = "0.64 0.95" } }, "SoccerScoreboard");
+            container.Add(new CuiLabel { Text = { Text = scoreRed.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = redConfig.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.36 0.1", AnchorMax = "0.64 0.7" } }, "SoccerScoreboard");
+            
+            // Black Team (Right)
+            container.Add(new CuiLabel { Text = { Text = blackConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = "0.8 0.8 0.8 0.8" }, RectTransform = { AnchorMin = "0.72 0.6", AnchorMax = "0.95 0.95" } }, "SoccerScoreboard");
+            container.Add(new CuiLabel { Text = { Text = scoreBlack.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = "0.8 0.8 0.8 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.72 0.1", AnchorMax = "0.95 0.7" } }, "SoccerScoreboard");
 
             CuiHelper.AddUi(player, container);
         }
@@ -376,13 +602,14 @@ namespace Oxide.Plugins
 
         private void ShowGoalBanner(string team)
         {
-            string col = (team == "RED") ? "1 0.2 0.2" : "0.2 0.4 1";
+            string col = (team == "RED") ? "1 0.2 0.2" : (team == "BLUE") ? "0.2 0.4 1" : "0.8 0.8 0.8";
+            string teamTag = (team == "RED") ? teamConfigs["red"].Tag : (team == "BLUE") ? teamConfigs["blue"].Tag : teamConfigs["black"].Tag;
             foreach (var p in BasePlayer.activePlayerList)
             {
                 CuiHelper.DestroyUi(p, "GoalBanner");
                 var c = new CuiElementContainer();
                 c.Add(new CuiPanel { Image = { Color = $"{col} 0.3", FadeIn = 0.1f }, RectTransform = { AnchorMin = "0 0.4", AnchorMax = "1 0.6" } }, "Overlay", "GoalBanner");
-                c.Add(new CuiLabel { Text = { Text = $"{team} SCORES!", FontSize = 50, Align = TextAnchor.MiddleCenter, Font = "permanentmarker.ttf", FadeIn=0.2f }, RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" } }, "GoalBanner");
+                c.Add(new CuiLabel { Text = { Text = $"{teamTag} SCORES!", FontSize = 50, Align = TextAnchor.MiddleCenter, Font = "permanentmarker.ttf", FadeIn=0.2f }, RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" } }, "GoalBanner");
                 CuiHelper.AddUi(p, c);
                 timer.Once(3f, () => CuiHelper.DestroyUi(p, "GoalBanner"));
             }
@@ -392,10 +619,54 @@ namespace Oxide.Plugins
         {
             CuiHelper.DestroyUi(player, "RoleSelectUI");
             var c = new CuiElementContainer();
+            var config = teamConfigs[team];
             string p = c.Add(new CuiPanel { Image = { Color = "0 0 0 0.9" }, RectTransform = { AnchorMin = "0.3 0.3", AnchorMax = "0.7 0.7" }, CursorEnabled = true }, "Overlay", "RoleSelectUI");
-            c.Add(new CuiLabel { Text = { Text = $"CHOOSE ROLE ({team.ToUpper()})", FontSize = 20, Align = TextAnchor.MiddleCenter }, RectTransform = { AnchorMin = "0 0.8", AnchorMax = "1 1" } }, p);
+            c.Add(new CuiLabel { Text = { Text = $"CHOOSE ROLE - {config.Name}", FontSize = 18, Align = TextAnchor.MiddleCenter, Color = config.Color + " 1" }, RectTransform = { AnchorMin = "0 0.8", AnchorMax = "1 1" } }, p);
+            c.Add(new CuiLabel { Text = { Text = $"({config.Tag})", FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "1 1 1 0.6" }, RectTransform = { AnchorMin = "0 0.7", AnchorMax = "1 0.8" } }, p);
             c.Add(new CuiButton { Button = { Command = "select_role Striker", Color = "0.2 0.6 0.2 1" }, Text = { Text = "STRIKER", FontSize = 16, Align = TextAnchor.MiddleCenter }, RectTransform = { AnchorMin = "0.1 0.2", AnchorMax = "0.45 0.6" } }, p);
             c.Add(new CuiButton { Button = { Command = "select_role Goalie", Color = "0.8 0.4 0.1 1" }, Text = { Text = "GOALIE", FontSize = 16, Align = TextAnchor.MiddleCenter }, RectTransform = { AnchorMin = "0.55 0.2", AnchorMax = "0.9 0.6" } }, p);
+            CuiHelper.AddUi(player, c);
+        }
+
+        private void ShowTeamSelectUI(BasePlayer player)
+        {
+            CuiHelper.DestroyUi(player, "TeamSelectUI");
+            var c = new CuiElementContainer();
+            string panel = c.Add(new CuiPanel { Image = { Color = "0 0 0 0.95" }, RectTransform = { AnchorMin = "0.25 0.25", AnchorMax = "0.75 0.75" }, CursorEnabled = true }, "Overlay", "TeamSelectUI");
+            
+            // Title
+            c.Add(new CuiLabel { Text = { Text = "SELECT YOUR TEAM", FontSize = 24, Align = TextAnchor.MiddleCenter, Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0 0.85", AnchorMax = "1 0.98" } }, panel);
+            
+            // Blue Team Button
+            var blueConfig = teamConfigs["blue"];
+            string blueBtn = c.Add(new CuiButton { Button = { Command = "select_team blue", Color = blueConfig.Color + " 0.8" }, Text = { Text = "", FontSize = 1 }, RectTransform = { AnchorMin = "0.05 0.55", AnchorMax = "0.32 0.78" } }, panel);
+            c.Add(new CuiLabel { Text = { Text = blueConfig.Name, FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "1 1 1 1" }, RectTransform = { AnchorMin = "0.05 0.05", AnchorMax = "0.95 0.35" } }, blueBtn);
+            c.Add(new CuiLabel { Text = { Text = $"[{blueConfig.Tag}]", FontSize = 18, Align = TextAnchor.MiddleCenter, Font = "robotocondensed-bold.ttf", Color = "1 1 1 1" }, RectTransform = { AnchorMin = "0.05 0.4", AnchorMax = "0.95 0.7" } }, blueBtn);
+            c.Add(new CuiLabel { Text = { Text = $"{blueTeam.Count} Players", FontSize = 12, Align = TextAnchor.MiddleCenter, Color = "1 1 1 0.7" }, RectTransform = { AnchorMin = "0.05 0.75", AnchorMax = "0.95 0.95" } }, blueBtn);
+            
+            // Red Team Button
+            var redConfig = teamConfigs["red"];
+            string redBtn = c.Add(new CuiButton { Button = { Command = "select_team red", Color = redConfig.Color + " 0.8" }, Text = { Text = "", FontSize = 1 }, RectTransform = { AnchorMin = "0.36 0.55", AnchorMax = "0.64 0.78" } }, panel);
+            c.Add(new CuiLabel { Text = { Text = redConfig.Name, FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "1 1 1 1" }, RectTransform = { AnchorMin = "0.05 0.05", AnchorMax = "0.95 0.35" } }, redBtn);
+            c.Add(new CuiLabel { Text = { Text = $"[{redConfig.Tag}]", FontSize = 18, Align = TextAnchor.MiddleCenter, Font = "robotocondensed-bold.ttf", Color = "1 1 1 1" }, RectTransform = { AnchorMin = "0.05 0.4", AnchorMax = "0.95 0.7" } }, redBtn);
+            c.Add(new CuiLabel { Text = { Text = $"{redTeam.Count} Players", FontSize = 12, Align = TextAnchor.MiddleCenter, Color = "1 1 1 0.7" }, RectTransform = { AnchorMin = "0.05 0.75", AnchorMax = "0.95 0.95" } }, redBtn);
+            
+            // Black Team Button
+            var blackConfig = teamConfigs["black"];
+            string blackBtn = c.Add(new CuiButton { Button = { Command = "select_team black", Color = "0.3 0.3 0.3 0.8" }, Text = { Text = "", FontSize = 1 }, RectTransform = { AnchorMin = "0.68 0.55", AnchorMax = "0.95 0.78" } }, panel);
+            c.Add(new CuiLabel { Text = { Text = blackConfig.Name, FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "1 1 1 1" }, RectTransform = { AnchorMin = "0.05 0.05", AnchorMax = "0.95 0.35" } }, blackBtn);
+            c.Add(new CuiLabel { Text = { Text = $"[{blackConfig.Tag}]", FontSize = 18, Align = TextAnchor.MiddleCenter, Font = "robotocondensed-bold.ttf", Color = "1 1 1 1" }, RectTransform = { AnchorMin = "0.05 0.4", AnchorMax = "0.95 0.7" } }, blackBtn);
+            c.Add(new CuiLabel { Text = { Text = $"{blackTeam.Count} Players", FontSize = 12, Align = TextAnchor.MiddleCenter, Color = "1 1 1 0.7" }, RectTransform = { AnchorMin = "0.05 0.75", AnchorMax = "0.95 0.95" } }, blackBtn);
+            
+            // Team descriptions
+            c.Add(new CuiLabel { Text = { Text = "Fast & Agile", FontSize = 11, Align = TextAnchor.MiddleCenter, Color = "0.8 0.8 0.8 1" }, RectTransform = { AnchorMin = "0.05 0.45", AnchorMax = "0.32 0.53" } }, panel);
+            c.Add(new CuiLabel { Text = { Text = "Tactical & Strong", FontSize = 11, Align = TextAnchor.MiddleCenter, Color = "0.8 0.8 0.8 1" }, RectTransform = { AnchorMin = "0.36 0.45", AnchorMax = "0.64 0.53" } }, panel);
+            c.Add(new CuiLabel { Text = { Text = "Coordinated & Deadly", FontSize = 11, Align = TextAnchor.MiddleCenter, Color = "0.8 0.8 0.8 1" }, RectTransform = { AnchorMin = "0.68 0.45", AnchorMax = "0.95 0.53" } }, panel);
+            
+            // Instructions
+            c.Add(new CuiLabel { Text = { Text = "Click a team to join the battle!", FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "1 1 1 0.8" }, RectTransform = { AnchorMin = "0 0.15", AnchorMax = "1 0.25" } }, panel);
+            c.Add(new CuiLabel { Text = { Text = "You can also use: /join blue, /join red, /join black", FontSize = 11, Align = TextAnchor.MiddleCenter, Color = "1 1 1 0.5" }, RectTransform = { AnchorMin = "0 0.08", AnchorMax = "1 0.15" } }, panel);
+            
             CuiHelper.AddUi(player, c);
         }
 
@@ -424,13 +695,15 @@ namespace Oxide.Plugins
         // ==========================================
         void OnPlayerRespawn(BasePlayer player)
         {
-            if (matchStarted && (redTeam.Contains(player.userID) || blueTeam.Contains(player.userID)))
+            if (matchStarted && (redTeam.Contains(player.userID) || blueTeam.Contains(player.userID) || blackTeam.Contains(player.userID)))
             {
                 NextTick(() => {
                     if (!playerRoles.ContainsKey(player.userID)) playerRoles[player.userID] = "Striker";
                     string role = playerRoles[player.userID];
-                    Vector3 goalPos = redTeam.Contains(player.userID) ? redGoalPos : blueGoalPos;
-                    Quaternion goalRot = redTeam.Contains(player.userID) ? redGoalRot : blueGoalRot;
+                    Vector3 goalPos = redTeam.Contains(player.userID) ? redGoalPos : 
+                                     blueTeam.Contains(player.userID) ? blueGoalPos : blackGoalPos;
+                    Quaternion goalRot = redTeam.Contains(player.userID) ? redGoalRot : 
+                                        blueTeam.Contains(player.userID) ? blueGoalRot : blackGoalRot;
                     if (goalPos != Vector3.zero) player.Teleport(goalPos + (goalRot * Vector3.forward * 5f));
                     player.metabolism.radiation_poison.value = 0;
                     player.health = player.MaxHealth();
@@ -481,6 +754,7 @@ namespace Oxide.Plugins
             if (!gameActive || activeBall == null) return;
             if (IsInside(activeBall.transform.position, blueGoalPos, blueGoalRot)) HandleGoal("RED");
             else if (IsInside(activeBall.transform.position, redGoalPos, redGoalRot)) HandleGoal("BLUE");
+            else if (IsInside(activeBall.transform.position, blackGoalPos, blackGoalRot)) HandleGoal("BLACK");
         }
 
         private bool IsInside(Vector3 b, Vector3 g, Quaternion r)
@@ -492,13 +766,16 @@ namespace Oxide.Plugins
         private void HandleGoal(string team)
         {
             gameActive = false;
-            if (team == "RED") scoreRed++; else scoreBlue++;
+            if (team == "RED") scoreRed++; 
+            else if (team == "BLUE") scoreBlue++; 
+            else if (team == "BLACK") scoreBlack++;
+            
             Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", activeBall.transform.position);
             RefreshScoreboardAll(); ShowGoalBanner(team);
             string mvp = (lastKicker != null) ? lastKicker.displayName : "None";
             tickerMessages.Add($"GOAL: {team} ({mvp})");
-            CallMiddleware($"EVENT: GOAL. {team} Scores. MVP: {mvp}.");
-            if (scoreRed >= ScoreToWin || scoreBlue >= ScoreToWin) EndMatch(team);
+            CallMiddleware($"EVENT: GOAL. {team} Scores. MVP: {mvp}. Score: R{scoreRed}-B{scoreBlue}-Bl{scoreBlack}");
+            if (scoreRed >= ScoreToWin || scoreBlue >= ScoreToWin || scoreBlack >= ScoreToWin) EndMatch(team);
             else timer.Once(5f, () => { SpawnBall(); gameActive = true; });
         }
 
