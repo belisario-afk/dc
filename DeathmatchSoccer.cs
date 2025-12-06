@@ -32,8 +32,8 @@ namespace Oxide.Plugins
      * /join [team] - Join a team (shows UI if no team specified)
      * /teams - Show team selection UI
      */
-    [Info("DeathmatchSoccer", "KillaDome", "5.1.0")]
-    [Description("3-Team Deathmatch Soccer with Custom Skins and Modern UI")]
+    [Info("DeathmatchSoccer", "KillaDome", "5.2.0")]
+    [Description("3-Team Deathmatch Soccer with Rotation Mode and Custom Skins")]
     public class DeathmatchSoccer : RustPlugin
     {
         // ==========================================
@@ -120,6 +120,14 @@ namespace Oxide.Plugins
         private bool matchStarted = false; 
         private bool debugActive = false;
         
+        // ROTATION SYSTEM (2 play, 1 waits)
+        private bool rotationMode = true; // Enable rotation by default
+        private string waitingTeam = "black"; // Team waiting for next match
+        private string team1Playing = "blue";
+        private string team2Playing = "red";
+        private Vector3 waitingAreaPos = Vector3.zero;
+        private int matchNumber = 1;
+        
         // TEAM CONFIGURATIONS
         private Dictionary<string, TeamConfig> teamConfigs = new Dictionary<string, TeamConfig>
         {
@@ -132,7 +140,7 @@ namespace Oxide.Plugins
         private Dictionary<ulong, bool> ballRangeState = new Dictionary<ulong, bool>();
         
         // TICKER
-        private List<string> tickerMessages = new List<string> { "3-TEAM DEATHMATCH SOCCER", "SHOOT BALL TO SCORE", "KILL ENEMIES", "FIRST TO 5 WINS", "BLUE vs RED vs BLACK" };
+        private List<string> tickerMessages = new List<string> { "ROTATION MODE: 2 PLAY, 1 WAITS", "WINNER PLAYS WAITING TEAM", "SHOOT BALL TO SCORE", "KILL ENEMIES", "FIRST TO 5 WINS" };
         private int tickerIndex = 0;
 
         // TEAMS
@@ -265,6 +273,23 @@ namespace Oxide.Plugins
             if (centerPos == Vector3.zero) { SendReply(player, "Error: Set Center first!"); return; }
             
             scoreRed = 0; scoreBlue = 0; scoreBlack = 0;
+            matchNumber = 1;
+            
+            if (rotationMode)
+            {
+                // Set initial rotation: blue vs red, black waits
+                team1Playing = "blue";
+                team2Playing = "red";
+                waitingTeam = "black";
+                SendWaitingTeamToArea();
+                PrintToChat($"ROTATION MATCH #{matchNumber}: {teamConfigs[team1Playing].Tag} vs {teamConfigs[team2Playing].Tag}");
+                PrintToChat($"Waiting: {teamConfigs[waitingTeam].Tag}");
+            }
+            else
+            {
+                PrintToChat("MATCH STARTED! 3 Teams Battle!");
+            }
+            
             gameActive = true; matchStarted = true;
             
             SpawnBall();
@@ -297,7 +322,16 @@ namespace Oxide.Plugins
         [ChatCommand("set_blue")] private void CmdSetBlue(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blueGoalPos=p.transform.position; blueGoalRot=p.transform.rotation; SendReply(p, "Blue Set."); DrawGoal(p, blueGoalPos, blueGoalRot, Color.blue, 5f); }}
         [ChatCommand("set_black")] private void CmdSetBlack(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos=p.transform.position; blackGoalRot=p.transform.rotation; SendReply(p, "Black Set."); DrawGoal(p, blackGoalPos, blackGoalRot, Color.black, 5f); }}
         [ChatCommand("set_center")] private void CmdSetCenter(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ centerPos=p.transform.position; SendReply(p, "Center Set."); }}
+        [ChatCommand("set_waiting")] private void CmdSetWaiting(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ waitingAreaPos=p.transform.position; SendReply(p, "Waiting Area Set."); }}
         [ChatCommand("reset_ball")] private void CmdResetBall(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ SpawnBall(); SendReply(p, "Ball Reset."); }}
+        
+        [ChatCommand("rotation")]
+        private void CmdRotation(BasePlayer player, string command, string[] args)
+        {
+            if (!player.IsAdmin) return;
+            rotationMode = !rotationMode;
+            SendReply(player, $"Rotation Mode: {(rotationMode ? "ON (2 play, 1 waits)" : "OFF (3-way battle)")}");
+        }
         
         [ChatCommand("goal_debug")]
         private void CmdToggleDebug(BasePlayer player, string command, string[] args)
@@ -581,27 +615,55 @@ namespace Oxide.Plugins
             var container = new CuiElementContainer();
             string imgId = GetImg("Soccer_Bar_BG");
             
-            var panel = new CuiPanel { Image = { Color = "0 0 0 0.8" }, RectTransform = { AnchorMin = "0.25 0.90", AnchorMax = "0.75 0.98" }, CursorEnabled = false };
+            var panel = new CuiPanel { Image = { Color = "0 0 0 0.8" }, RectTransform = { AnchorMin = "0.25 0.88", AnchorMax = "0.75 0.98" }, CursorEnabled = false };
             if (!string.IsNullOrEmpty(imgId))
-                container.Add(new CuiElement { Name = "SoccerScoreboard", Parent = "Overlay", Components = { new CuiRawImageComponent { Png = imgId }, new CuiRectTransformComponent { AnchorMin = "0.25 0.90", AnchorMax = "0.75 0.98" } } });
+                container.Add(new CuiElement { Name = "SoccerScoreboard", Parent = "Overlay", Components = { new CuiRawImageComponent { Png = imgId }, new CuiRectTransformComponent { AnchorMin = "0.25 0.88", AnchorMax = "0.75 0.98" } } });
             else container.Add(panel, "Overlay", "SoccerScoreboard");
 
-            // Three team display with team names
-            var blueConfig = teamConfigs["blue"];
-            var redConfig = teamConfigs["red"];
-            var blackConfig = teamConfigs["black"];
-            
-            // Blue Team (Left)
-            container.Add(new CuiLabel { Text = { Text = blueConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = blueConfig.Color + " 0.8" }, RectTransform = { AnchorMin = "0.05 0.6", AnchorMax = "0.28 0.95" } }, "SoccerScoreboard");
-            container.Add(new CuiLabel { Text = { Text = scoreBlue.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = blueConfig.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.05 0.1", AnchorMax = "0.28 0.7" } }, "SoccerScoreboard");
-            
-            // Red Team (Middle)
-            container.Add(new CuiLabel { Text = { Text = redConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = redConfig.Color + " 0.8" }, RectTransform = { AnchorMin = "0.36 0.6", AnchorMax = "0.64 0.95" } }, "SoccerScoreboard");
-            container.Add(new CuiLabel { Text = { Text = scoreRed.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = redConfig.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.36 0.1", AnchorMax = "0.64 0.7" } }, "SoccerScoreboard");
-            
-            // Black Team (Right)
-            container.Add(new CuiLabel { Text = { Text = blackConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = "0.8 0.8 0.8 0.8" }, RectTransform = { AnchorMin = "0.72 0.6", AnchorMax = "0.95 0.95" } }, "SoccerScoreboard");
-            container.Add(new CuiLabel { Text = { Text = scoreBlack.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = "0.8 0.8 0.8 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.72 0.1", AnchorMax = "0.95 0.7" } }, "SoccerScoreboard");
+            if (rotationMode)
+            {
+                // Rotation Mode: Show only playing teams + waiting indicator
+                container.Add(new CuiLabel { Text = { Text = $"MATCH #{matchNumber}", FontSize = 10, Align = TextAnchor.UpperCenter, Color = "1 1 0 0.8" }, RectTransform = { AnchorMin = "0 0.85", AnchorMax = "1 1" } }, "SoccerScoreboard");
+                
+                var team1Config = teamConfigs[team1Playing];
+                var team2Config = teamConfigs[team2Playing];
+                int score1 = GetTeamScore(team1Playing);
+                int score2 = GetTeamScore(team2Playing);
+                
+                // Team 1 (Left)
+                container.Add(new CuiLabel { Text = { Text = team1Config.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = team1Config.Color + " 0.8" }, RectTransform = { AnchorMin = "0.1 0.5", AnchorMax = "0.4 0.8" } }, "SoccerScoreboard");
+                container.Add(new CuiLabel { Text = { Text = score1.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = team1Config.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.1 0.0", AnchorMax = "0.4 0.5" } }, "SoccerScoreboard");
+                
+                // VS
+                container.Add(new CuiLabel { Text = { Text = "VS", FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "1 1 1 0.6" }, RectTransform = { AnchorMin = "0.45 0.2", AnchorMax = "0.55 0.5" } }, "SoccerScoreboard");
+                
+                // Team 2 (Right)
+                container.Add(new CuiLabel { Text = { Text = team2Config.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = team2Config.Color + " 0.8" }, RectTransform = { AnchorMin = "0.6 0.5", AnchorMax = "0.9 0.8" } }, "SoccerScoreboard");
+                container.Add(new CuiLabel { Text = { Text = score2.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = team2Config.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.6 0.0", AnchorMax = "0.9 0.5" } }, "SoccerScoreboard");
+                
+                // Waiting team indicator
+                var waitingConfig = teamConfigs[waitingTeam];
+                container.Add(new CuiLabel { Text = { Text = $"Waiting: {waitingConfig.Tag}", FontSize = 9, Align = TextAnchor.LowerCenter, Color = "1 1 1 0.5" }, RectTransform = { AnchorMin = "0 0", AnchorMax = "1 0.1" } }, "SoccerScoreboard");
+            }
+            else
+            {
+                // Normal 3-way mode
+                var blueConfig = teamConfigs["blue"];
+                var redConfig = teamConfigs["red"];
+                var blackConfig = teamConfigs["black"];
+                
+                // Blue Team (Left)
+                container.Add(new CuiLabel { Text = { Text = blueConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = blueConfig.Color + " 0.8" }, RectTransform = { AnchorMin = "0.05 0.6", AnchorMax = "0.28 0.95" } }, "SoccerScoreboard");
+                container.Add(new CuiLabel { Text = { Text = scoreBlue.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = blueConfig.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.05 0.1", AnchorMax = "0.28 0.7" } }, "SoccerScoreboard");
+                
+                // Red Team (Middle)
+                container.Add(new CuiLabel { Text = { Text = redConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = redConfig.Color + " 0.8" }, RectTransform = { AnchorMin = "0.36 0.6", AnchorMax = "0.64 0.95" } }, "SoccerScoreboard");
+                container.Add(new CuiLabel { Text = { Text = scoreRed.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = redConfig.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.36 0.1", AnchorMax = "0.64 0.7" } }, "SoccerScoreboard");
+                
+                // Black Team (Right)
+                container.Add(new CuiLabel { Text = { Text = blackConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = "0.8 0.8 0.8 0.8" }, RectTransform = { AnchorMin = "0.72 0.6", AnchorMax = "0.95 0.95" } }, "SoccerScoreboard");
+                container.Add(new CuiLabel { Text = { Text = scoreBlack.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = "0.8 0.8 0.8 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.72 0.1", AnchorMax = "0.95 0.7" } }, "SoccerScoreboard");
+            }
 
             CuiHelper.AddUi(player, container);
         }
@@ -772,9 +834,11 @@ namespace Oxide.Plugins
             
             // Determine which goal was scored in and award point to the kicking team
             string scoringTeam = null;
+            Vector3 goalScoredIn = Vector3.zero;
             
             if (IsInside(activeBall.transform.position, blueGoalPos, blueGoalRot))
             {
+                goalScoredIn = blueGoalPos;
                 // Ball went into blue's goal - determine who kicked it
                 if (lastKicker != null)
                 {
@@ -784,6 +848,7 @@ namespace Oxide.Plugins
             }
             else if (IsInside(activeBall.transform.position, redGoalPos, redGoalRot))
             {
+                goalScoredIn = redGoalPos;
                 // Ball went into red's goal - determine who kicked it
                 if (lastKicker != null)
                 {
@@ -793,6 +858,7 @@ namespace Oxide.Plugins
             }
             else if (IsInside(activeBall.transform.position, blackGoalPos, blackGoalRot))
             {
+                goalScoredIn = blackGoalPos;
                 // Ball went into black's goal - determine who kicked it
                 if (lastKicker != null)
                 {
@@ -801,7 +867,22 @@ namespace Oxide.Plugins
                 }
             }
             
-            if (scoringTeam != null) HandleGoal(scoringTeam);
+            // In rotation mode, only count goals if scored by playing teams
+            if (scoringTeam != null)
+            {
+                if (rotationMode)
+                {
+                    string teamLower = scoringTeam.ToLower();
+                    if (teamLower == team1Playing || teamLower == team2Playing)
+                    {
+                        HandleGoal(scoringTeam);
+                    }
+                }
+                else
+                {
+                    HandleGoal(scoringTeam);
+                }
+            }
         }
 
         private bool IsInside(Vector3 b, Vector3 g, Quaternion r)
@@ -813,26 +894,135 @@ namespace Oxide.Plugins
         private void HandleGoal(string team)
         {
             gameActive = false;
-            if (team == "RED") scoreRed++; 
-            else if (team == "BLUE") scoreBlue++; 
-            else if (team == "BLACK") scoreBlack++;
+            
+            // Only count goals for teams that are playing (in rotation mode)
+            if (rotationMode)
+            {
+                if (team.ToLower() == team1Playing) 
+                {
+                    if (team == "RED") scoreRed++; 
+                    else if (team == "BLUE") scoreBlue++; 
+                    else if (team == "BLACK") scoreBlack++;
+                }
+                else if (team.ToLower() == team2Playing)
+                {
+                    if (team == "RED") scoreRed++; 
+                    else if (team == "BLUE") scoreBlue++; 
+                    else if (team == "BLACK") scoreBlack++;
+                }
+            }
+            else
+            {
+                // Normal 3-way mode
+                if (team == "RED") scoreRed++; 
+                else if (team == "BLUE") scoreBlue++; 
+                else if (team == "BLACK") scoreBlack++;
+            }
             
             Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", activeBall.transform.position);
             RefreshScoreboardAll(); ShowGoalBanner(team);
             string mvp = (lastKicker != null) ? lastKicker.displayName : "None";
             tickerMessages.Add($"GOAL: {team} ({mvp})");
-            CallMiddleware($"EVENT: GOAL. {team} Scores. MVP: {mvp}. Score: R{scoreRed}-B{scoreBlue}-Bl{scoreBlack}");
-            if (scoreRed >= ScoreToWin || scoreBlue >= ScoreToWin || scoreBlack >= ScoreToWin) EndMatch(team);
-            else timer.Once(5f, () => { SpawnBall(); gameActive = true; });
+            
+            if (rotationMode)
+            {
+                CallMiddleware($"EVENT: GOAL. {team} Scores. MVP: {mvp}. Match #{matchNumber}");
+                int score1 = GetTeamScore(team1Playing);
+                int score2 = GetTeamScore(team2Playing);
+                if (score1 >= ScoreToWin || score2 >= ScoreToWin) EndMatch(team);
+                else timer.Once(5f, () => { SpawnBall(); gameActive = true; });
+            }
+            else
+            {
+                CallMiddleware($"EVENT: GOAL. {team} Scores. MVP: {mvp}. Score: R{scoreRed}-B{scoreBlue}-Bl{scoreBlack}");
+                if (scoreRed >= ScoreToWin || scoreBlue >= ScoreToWin || scoreBlack >= ScoreToWin) EndMatch(team);
+                else timer.Once(5f, () => { SpawnBall(); gameActive = true; });
+            }
         }
 
         private void EndMatch(string winner)
         {
-            PrintToChat($"GAME OVER! {winner} WINS!");
-            CallMiddleware($"EVENT: MATCH_END. Winner: {winner}");
+            string winnerTag = teamConfigs[winner.ToLower()].Tag;
+            PrintToChat($"MATCH #{matchNumber} OVER! {winnerTag} WINS!");
+            CallMiddleware($"EVENT: MATCH_END. Winner: {winnerTag}");
             if (activeBall != null) activeBall.Kill();
-            gameActive = false; matchStarted = false;
-            timer.Once(5f, () => { foreach(var p in BasePlayer.activePlayerList) { CuiHelper.DestroyUi(p, "SoccerScoreboard"); CuiHelper.DestroyUi(p, "SoccerTicker"); CuiHelper.DestroyUi(p, "BallRangeHUD"); CuiHelper.DestroyUi(p, "LeashHUD"); } });
+            gameActive = false;
+            
+            if (rotationMode)
+            {
+                // Rotate teams: Winner plays waiting team, loser waits
+                string loser = (winner.ToLower() == team1Playing) ? team2Playing : team1Playing;
+                timer.Once(8f, () => RotateTeams(winner.ToLower(), loser));
+            }
+            else
+            {
+                matchStarted = false;
+                timer.Once(5f, () => { foreach(var p in BasePlayer.activePlayerList) { CuiHelper.DestroyUi(p, "SoccerScoreboard"); CuiHelper.DestroyUi(p, "SoccerTicker"); CuiHelper.DestroyUi(p, "BallRangeHUD"); CuiHelper.DestroyUi(p, "LeashHUD"); } });
+            }
+        }
+        
+        private int GetTeamScore(string team)
+        {
+            if (team == "red") return scoreRed;
+            if (team == "blue") return scoreBlue;
+            if (team == "black") return scoreBlack;
+            return 0;
+        }
+        
+        private void RotateTeams(string winner, string loser)
+        {
+            matchNumber++;
+            
+            // Winner stays, waiting team comes in, loser goes to waiting
+            string newTeam1 = winner;
+            string newTeam2 = waitingTeam;
+            string newWaiting = loser;
+            
+            team1Playing = newTeam1;
+            team2Playing = newTeam2;
+            waitingTeam = newWaiting;
+            
+            // Reset scores for new match
+            scoreRed = 0; scoreBlue = 0; scoreBlack = 0;
+            
+            SendWaitingTeamToArea();
+            
+            PrintToChat("═══════════════════════════════════");
+            PrintToChat($"ROTATION MATCH #{matchNumber}");
+            PrintToChat($"{teamConfigs[team1Playing].Tag} vs {teamConfigs[team2Playing].Tag}");
+            PrintToChat($"Waiting: {teamConfigs[waitingTeam].Tag}");
+            PrintToChat("═══════════════════════════════════");
+            
+            // Start new match after delay
+            timer.Once(5f, () => {
+                gameActive = true;
+                SpawnBall();
+                RefreshScoreboardAll();
+            });
+        }
+        
+        private void SendWaitingTeamToArea()
+        {
+            if (waitingAreaPos == Vector3.zero) return;
+            
+            List<ulong> waitingList = GetTeamList(waitingTeam);
+            foreach (var playerId in waitingList)
+            {
+                var player = BasePlayer.FindByID(playerId);
+                if (player != null && player.IsConnected)
+                {
+                    player.Teleport(waitingAreaPos);
+                    player.ShowToast(GameTip.Styles.Blue_Normal, $"Your team is WAITING. Next match incoming!");
+                }
+            }
+        }
+        
+        private List<ulong> GetTeamList(string team)
+        {
+            if (team == "red") return redTeam;
+            if (team == "blue") return blueTeam;
+            if (team == "black") return blackTeam;
+            return new List<ulong>();
         }
 
         private void DrawGoal(BasePlayer player, Vector3 c, Quaternion r, Color col, float dur)
