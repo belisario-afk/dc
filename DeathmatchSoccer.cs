@@ -10,8 +10,30 @@ using System;
 
 namespace Oxide.Plugins
 {
-    [Info("DeathmatchSoccer", "KillaDome", "5.0.0")]
-    [Description("The Master Build: AI, UI, Roles, Physics, and Data Persistence.")]
+    /*
+     * DeathmatchSoccer - 3-Team Soccer Battle Plugin
+     * 
+     * FEATURES:
+     * - 3-Team System: Blue (SHELL-SEA/GRUB), Red (Loot-pool/DOORCAMPER), Black (PZG/ROAMER)
+     * - Custom Skins: Each team can have unique skins via Skins.cs plugin
+     * - Modern UI: Team selection menu, 3-team scoreboard, role selection
+     * - 2 Roles: Striker (100HP, Thompson) and Goalie (200HP, SPAS-12)
+     * 
+     * ADMIN COMMANDS:
+     * /set_red, /set_blue, /set_black - Set goal positions
+     * /set_center - Set ball spawn position
+     * /save_goals, /load_goals - Persist arena data
+     * /start_match - Begin the match
+     * /setskin <team> <item> <skinId> - Configure team skins
+     * /showskins - Display all skin configurations
+     * /goal_debug - Toggle goal zone visualization
+     * 
+     * PLAYER COMMANDS:
+     * /join [team] - Join a team (shows UI if no team specified)
+     * /teams - Show team selection UI
+     */
+    [Info("DeathmatchSoccer", "KillaDome", "5.1.0")]
+    [Description("3-Team Deathmatch Soccer with Custom Skins and Modern UI")]
     public class DeathmatchSoccer : RustPlugin
     {
         // ==========================================
