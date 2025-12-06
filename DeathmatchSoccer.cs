@@ -556,6 +556,10 @@ namespace Oxide.Plugins
             {
                 player.inventory.GiveItem(item, container);
             }
+            else
+            {
+                Puts($"ERROR: Failed to create item '{itemName}' for player {player.displayName}");
+            }
         }
 
         private void HudLoop()
@@ -1003,7 +1007,12 @@ namespace Oxide.Plugins
         
         private void SendWaitingTeamToArea()
         {
-            if (waitingAreaPos == Vector3.zero) return;
+            if (waitingAreaPos == Vector3.zero)
+            {
+                Puts("WARNING: Waiting area not set. Use /set_waiting to configure.");
+                PrintToChat("WARNING: Waiting area not configured!");
+                return;
+            }
             
             List<ulong> waitingList = GetTeamList(waitingTeam);
             foreach (var playerId in waitingList)
