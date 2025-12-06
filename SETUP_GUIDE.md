@@ -241,4 +241,4 @@ private int ScoreToWin = 5;                   // Goals needed to win
 ## Credits
 - Plugin: KillaDome
 - Version: 5.1.0
-- Updated: 2025-12-06
+- Updated: 2024-12-06

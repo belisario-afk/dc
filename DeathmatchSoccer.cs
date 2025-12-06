@@ -520,11 +520,6 @@ namespace Oxide.Plugins
             Item item = ItemManager.CreateByName(itemName, amount, skinId);
             if (item != null)
             {
-                // If Skins plugin is loaded and skinId is set, apply the skin
-                if (Skins != null && skinId > 0)
-                {
-                    item.skin = skinId;
-                }
                 player.inventory.GiveItem(item, container);
             }
         }
@@ -774,9 +769,39 @@ namespace Oxide.Plugins
         private void CheckGoals()
         {
             if (!gameActive || activeBall == null) return;
-            if (IsInside(activeBall.transform.position, blueGoalPos, blueGoalRot)) HandleGoal("RED");
-            else if (IsInside(activeBall.transform.position, redGoalPos, redGoalRot)) HandleGoal("BLUE");
-            else if (IsInside(activeBall.transform.position, blackGoalPos, blackGoalRot)) HandleGoal("BLACK");
+            
+            // Determine which goal was scored in and award point to the kicking team
+            string scoringTeam = null;
+            
+            if (IsInside(activeBall.transform.position, blueGoalPos, blueGoalRot))
+            {
+                // Ball went into blue's goal - determine who kicked it
+                if (lastKicker != null)
+                {
+                    if (redTeam.Contains(lastKicker.userID)) scoringTeam = "RED";
+                    else if (blackTeam.Contains(lastKicker.userID)) scoringTeam = "BLACK";
+                }
+            }
+            else if (IsInside(activeBall.transform.position, redGoalPos, redGoalRot))
+            {
+                // Ball went into red's goal - determine who kicked it
+                if (lastKicker != null)
+                {
+                    if (blueTeam.Contains(lastKicker.userID)) scoringTeam = "BLUE";
+                    else if (blackTeam.Contains(lastKicker.userID)) scoringTeam = "BLACK";
+                }
+            }
+            else if (IsInside(activeBall.transform.position, blackGoalPos, blackGoalRot))
+            {
+                // Ball went into black's goal - determine who kicked it
+                if (lastKicker != null)
+                {
+                    if (redTeam.Contains(lastKicker.userID)) scoringTeam = "RED";
+                    else if (blueTeam.Contains(lastKicker.userID)) scoringTeam = "BLUE";
+                }
+            }
+            
+            if (scoringTeam != null) HandleGoal(scoringTeam);
         }
 
         private bool IsInside(Vector3 b, Vector3 g, Quaternion r)
