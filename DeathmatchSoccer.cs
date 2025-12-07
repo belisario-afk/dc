@@ -42,8 +42,8 @@ namespace Oxide.Plugins
      * /join [team] - Join a team (shows UI if no team specified)
      * /teams - Show team selection UI
      */
-    [Info("DeathmatchSoccer", "KillaDome", "5.3.0")]
-    [Description("3-Team Soccer with Goal Swapping Rotation System")]
+    [Info("DeathmatchSoccer", "KillaDome", "5.4.0")]
+    [Description("3-Team Soccer with Lobby System and Celebrations")]
     public class DeathmatchSoccer : RustPlugin
     {
         // ==========================================
@@ -136,6 +136,21 @@ namespace Oxide.Plugins
         private string team1Playing = "blue";
         private string team2Playing = "red";
         private int matchNumber = 1;
+        private int maxMatchesPerTournament = 2; // Tournament ends after 2 matches
+        
+        // LOBBY SYSTEM
+        private bool lobbyActive = true;
+        private Vector3 blueSpherePos = Vector3.zero;
+        private Vector3 redSpherePos = Vector3.zero;
+        private Vector3 blackSpherePos = Vector3.zero;
+        private float sphereRadius = 3.0f;
+        private Dictionary<ulong, float> lastSphereInteraction = new Dictionary<ulong, float>();
+        private Timer lobbyTimer;
+        private int lobbyCountdown = 0;
+        
+        // CELEBRATION SYSTEM
+        private List<string> celebrationMessages = new List<string>();
+        private Timer celebrationTimer;
         
         // ACTIVE GOALS - Track which goals are currently in play
         private Dictionary<string, bool> activeGoals = new Dictionary<string, bool>
@@ -358,6 +373,9 @@ namespace Oxide.Plugins
         [ChatCommand("set_black1")] private void CmdSetBlack1(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos1=p.transform.position; blackGoalRot1=p.transform.rotation; SendReply(p, "Black Goal 1 Set (at Red position)."); DrawGoal(p, blackGoalPos1, blackGoalRot1, Color.black, 5f); }}
         [ChatCommand("set_black2")] private void CmdSetBlack2(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos2=p.transform.position; blackGoalRot2=p.transform.rotation; SendReply(p, "Black Goal 2 Set (at Blue position)."); DrawGoal(p, blackGoalPos2, blackGoalRot2, Color.black, 5f); }}
         [ChatCommand("set_center")] private void CmdSetCenter(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ centerPos=p.transform.position; SendReply(p, "Center Set."); }}
+        [ChatCommand("set_blue_sphere")] private void CmdSetBlueSphere(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blueSpherePos=p.transform.position; SendReply(p, "Blue Lobby Sphere Set."); DrawSphere(p, blueSpherePos, Color.blue, 5f); }}
+        [ChatCommand("set_red_sphere")] private void CmdSetRedSphere(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ redSpherePos=p.transform.position; SendReply(p, "Red Lobby Sphere Set."); DrawSphere(p, redSpherePos, Color.red, 5f); }}
+        [ChatCommand("set_black_sphere")] private void CmdSetBlackSphere(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackSpherePos=p.transform.position; SendReply(p, "Black Lobby Sphere Set."); DrawSphere(p, blackSpherePos, Color.black, 5f); }}
         [ChatCommand("reset_ball")] private void CmdResetBall(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ SpawnBall(); SendReply(p, "Ball Reset."); }}
         
         [ChatCommand("rotation")]
@@ -1087,11 +1105,22 @@ namespace Oxide.Plugins
             if (activeBall != null) activeBall.Kill();
             gameActive = false;
             
+            // Trigger celebrations
+            TriggerCelebrations(winner.ToLower());
+            
             if (rotationMode)
             {
-                // Rotate teams: Winner plays waiting team, loser waits
-                string loser = (winner.ToLower() == team1Playing) ? team2Playing : team1Playing;
-                timer.Once(8f, () => RotateTeams(winner.ToLower(), loser));
+                // Check if tournament should end (after 2 matches)
+                if (matchNumber >= maxMatchesPerTournament)
+                {
+                    timer.Once(8f, () => EndTournament(winner.ToLower()));
+                }
+                else
+                {
+                    // Continue rotation
+                    string loser = (winner.ToLower() == team1Playing) ? team2Playing : team1Playing;
+                    timer.Once(8f, () => RotateTeams(winner.ToLower(), loser));
+                }
             }
             else
             {
@@ -1235,6 +1264,242 @@ namespace Oxide.Plugins
             });
         }
         
+        private void EndTournament(string tournamentWinner)
+        {
+            string winnerTag = teamConfigs[tournamentWinner].Tag;
+            PrintToChat("═══════════════════════════════════");
+            PrintToChat($"TOURNAMENT COMPLETE!");
+            PrintToChat($"CHAMPION: {winnerTag}");
+            PrintToChat("═══════════════════════════════════");
+            
+            // Final celebrations
+            TriggerTournamentCelebrations(tournamentWinner);
+            
+            // Reset match state
+            matchStarted = false;
+            matchNumber = 1;
+            
+            // Clear all UIs
+            timer.Once(10f, () => {
+                foreach(var p in BasePlayer.activePlayerList)
+                {
+                    CuiHelper.DestroyUi(p, "SoccerScoreboard");
+                    CuiHelper.DestroyUi(p, "SoccerTicker");
+                    CuiHelper.DestroyUi(p, "BallRangeHUD");
+                    CuiHelper.DestroyUi(p, "LeashHUD");
+                }
+            });
+            
+            // Start lobby countdown
+            timer.Once(15f, () => StartLobbyCountdown(30));
+        }
+        
+        private void StartLobbyCountdown(int seconds)
+        {
+            lobbyActive = true;
+            lobbyCountdown = seconds;
+            
+            PrintToChat("═══════════════════════════════════");
+            PrintToChat($"LOBBY ACTIVE - Next match in {seconds} seconds");
+            PrintToChat("Join a team sphere or use /join command");
+            PrintToChat("═══════════════════════════════════");
+            
+            if (lobbyTimer != null) lobbyTimer.Destroy();
+            lobbyTimer = timer.Repeat(1f, seconds, () => {
+                lobbyCountdown--;
+                
+                if (lobbyCountdown == 10)
+                {
+                    PrintToChat($"Match starting in {lobbyCountdown} seconds!");
+                }
+                else if (lobbyCountdown == 5)
+                {
+                    PrintToChat($"Match starting in {lobbyCountdown}...");
+                }
+                else if (lobbyCountdown <= 3 && lobbyCountdown > 0)
+                {
+                    PrintToChat($"{lobbyCountdown}...");
+                }
+                else if (lobbyCountdown == 0)
+                {
+                    AutoStartMatch();
+                }
+            });
+            
+            // Start lobby monitoring
+            MonitorLobbySpheresStart();
+        }
+        
+        private void AutoStartMatch()
+        {
+            lobbyActive = false;
+            if (lobbyTimer != null) lobbyTimer.Destroy();
+            
+            // Reset for new tournament
+            scoreRed = 0; scoreBlue = 0; scoreBlack = 0;
+            matchNumber = 1;
+            
+            if (rotationMode)
+            {
+                team1Playing = "blue";
+                team2Playing = "red";
+                waitingTeam = "black";
+                
+                activeGoals["red"] = true;
+                activeGoals["blue"] = true;
+                activeGoals["black1"] = false;
+                activeGoals["black2"] = false;
+                
+                PrintToChat($"ROTATION MATCH #{matchNumber}: {teamConfigs[team1Playing].Tag} vs {teamConfigs[team2Playing].Tag}");
+                PrintToChat($"Next Team: {teamConfigs[waitingTeam].Tag}");
+            }
+            else
+            {
+                PrintToChat("MATCH STARTED! 3 Teams Battle!");
+            }
+            
+            gameActive = true;
+            matchStarted = true;
+            
+            SpawnBall();
+            RefreshScoreboardAll();
+            StartTicker();
+            
+            if (gameTimer != null) gameTimer.Destroy();
+            gameTimer = timer.Repeat(0.05f, 0, CheckGoals);
+            
+            if (hudTimer != null) hudTimer.Destroy();
+            hudTimer = timer.Repeat(0.5f, 0, HudLoop);
+        }
+        
+        // ==========================================
+        // LOBBY SYSTEM - SPHERE MONITORING
+        // ==========================================
+        private void MonitorLobbySpheresStart()
+        {
+            if (lobbyTimer != null && lobbyTimer.Destroyed == false)
+            {
+                // Already running
+                return;
+            }
+            
+            timer.Repeat(0.5f, 0, () => {
+                if (!lobbyActive) return;
+                
+                foreach (var player in BasePlayer.activePlayerList)
+                {
+                    if (player == null || !player.IsConnected) continue;
+                    
+                    // Check distance to each sphere
+                    CheckSphereProximity(player, "blue", blueSpherePos);
+                    CheckSphereProximity(player, "red", redSpherePos);
+                    CheckSphereProximity(player, "black", blackSpherePos);
+                }
+            });
+        }
+        
+        private void CheckSphereProximity(BasePlayer player, string team, Vector3 spherePos)
+        {
+            if (spherePos == Vector3.zero) return;
+            
+            float distance = Vector3.Distance(player.transform.position, spherePos);
+            
+            if (distance <= sphereRadius)
+            {
+                // Player is in sphere range
+                if (!lastSphereInteraction.ContainsKey(player.userID) || 
+                    Time.time - lastSphereInteraction[player.userID] > 3f)
+                {
+                    lastSphereInteraction[player.userID] = Time.time;
+                    OnPlayerEnterSphere(player, team);
+                }
+            }
+        }
+        
+        private void OnPlayerEnterSphere(BasePlayer player, string team)
+        {
+            // Show team selection UI
+            ShowTeamSelectUI(player);
+            
+            // Show hint
+            player.ShowToast(GameTip.Styles.Blue_Normal, $"Entering {teamConfigs[team].Tag} sphere!");
+        }
+        
+        // ==========================================
+        // CELEBRATION SYSTEM
+        // ==========================================
+        private void TriggerCelebrations(string winner)
+        {
+            string winnerTag = teamConfigs[winner].Tag;
+            var winnerColor = teamConfigs[winner].Color;
+            
+            // Fireworks effect
+            timer.Repeat(0.5f, 10, () => {
+                LaunchFirework(centerPos + new Vector3(UnityEngine.Random.Range(-20f, 20f), 0, UnityEngine.Random.Range(-20f, 20f)));
+            });
+            
+            // Sky text celebration
+            ShowSkyText(winnerTag + " WINS!", winnerColor, 5f);
+        }
+        
+        private void TriggerTournamentCelebrations(string winner)
+        {
+            string winnerTag = teamConfigs[winner].Tag;
+            var winnerColor = teamConfigs[winner].Color;
+            
+            // Big fireworks
+            timer.Repeat(0.3f, 20, () => {
+                LaunchFirework(centerPos + new Vector3(UnityEngine.Random.Range(-30f, 30f), 0, UnityEngine.Random.Range(-30f, 30f)));
+            });
+            
+            // Tournament champion text
+            ShowSkyText("TOURNAMENT", "1 1 1", 3f, 40f);
+            timer.Once(3f, () => ShowSkyText("CHAMPION", "1 1 0", 3f, 35f));
+            timer.Once(6f, () => ShowSkyText(winnerTag, winnerColor, 5f, 45f));
+        }
+        
+        private void LaunchFirework(Vector3 position)
+        {
+            // Create firework effect at position
+            Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", position + new Vector3(0, 30f, 0));
+            
+            // Add some sparkles
+            for (int i = 0; i < 5; i++)
+            {
+                Vector3 offset = new Vector3(UnityEngine.Random.Range(-5f, 5f), UnityEngine.Random.Range(-3f, 3f), UnityEngine.Random.Range(-5f, 5f));
+                Effect.server.Run("assets/bundled/prefabs/fx/item_break.prefab", position + new Vector3(0, 30f, 0) + offset);
+            }
+        }
+        
+        private void ShowSkyText(string text, string colorStr, float duration, float height = 30f)
+        {
+            // Parse color
+            string[] rgb = colorStr.Split(' ');
+            Color color = new Color(
+                float.Parse(rgb[0]),
+                float.Parse(rgb[1]),
+                float.Parse(rgb[2])
+            );
+            
+            // Show text in sky for all players
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                if (player == null || !player.IsConnected) continue;
+                
+                Vector3 textPos = centerPos + new Vector3(0, height, 0);
+                
+                // Main text
+                player.SendConsoleCommand("ddraw.text", duration, color, textPos, $"<size=50>{text}</size>");
+                
+                // Outer glow effect (multiple layers)
+                Color glowColor = new Color(color.r, color.g, color.b, 0.3f);
+                player.SendConsoleCommand("ddraw.text", duration, glowColor, textPos + new Vector3(0.2f, 0.2f, 0), $"<size=50>{text}</size>");
+                player.SendConsoleCommand("ddraw.text", duration, glowColor, textPos + new Vector3(-0.2f, 0.2f, 0), $"<size=50>{text}</size>");
+                player.SendConsoleCommand("ddraw.text", duration, glowColor, textPos + new Vector3(0.2f, -0.2f, 0), $"<size=50>{text}</size>");
+                player.SendConsoleCommand("ddraw.text", duration, glowColor, textPos + new Vector3(-0.2f, -0.2f, 0), $"<size=50>{text}</size>");
+            }
+        }
+        
         private void DrawGoal(BasePlayer player, Vector3 c, Quaternion r, Color col, float dur)
         {
             float hw=GoalWidth/2, hh=GoalHeight/2, hd=GoalDepth/2;
@@ -1245,6 +1510,52 @@ namespace Oxide.Plugins
             player.SendConsoleCommand("ddraw.line", dur, col, p[4], p[5]); player.SendConsoleCommand("ddraw.line", dur, col, p[5], p[6]); player.SendConsoleCommand("ddraw.line", dur, col, p[6], p[7]); player.SendConsoleCommand("ddraw.line", dur, col, p[7], p[4]);
             player.SendConsoleCommand("ddraw.line", dur, col, p[0], p[4]); player.SendConsoleCommand("ddraw.line", dur, col, p[1], p[5]); player.SendConsoleCommand("ddraw.line", dur, col, p[2], p[6]); player.SendConsoleCommand("ddraw.line", dur, col, p[3], p[7]);
             player.SendConsoleCommand("ddraw.text", dur, col, c + new Vector3(0, hh + 2f, 0), "GOAL ZONE");
+        }
+        
+        private void DrawSphere(BasePlayer player, Vector3 center, Color col, float dur)
+        {
+            // Draw sphere outline
+            int segments = 16;
+            float radius = sphereRadius;
+            
+            // Draw horizontal circles at different heights
+            for (int h = -1; h <= 1; h++)
+            {
+                float y = h * radius * 0.7f;
+                float r = Mathf.Sqrt(radius * radius - y * y);
+                
+                for (int i = 0; i < segments; i++)
+                {
+                    float angle1 = (i / (float)segments) * Mathf.PI * 2;
+                    float angle2 = ((i + 1) / (float)segments) * Mathf.PI * 2;
+                    
+                    Vector3 p1 = center + new Vector3(Mathf.Cos(angle1) * r, y, Mathf.Sin(angle1) * r);
+                    Vector3 p2 = center + new Vector3(Mathf.Cos(angle2) * r, y, Mathf.Sin(angle2) * r);
+                    
+                    player.SendConsoleCommand("ddraw.line", dur, col, p1, p2);
+                }
+            }
+            
+            // Draw vertical circles
+            for (int i = 0; i < 4; i++)
+            {
+                float angle = (i / 4f) * Mathf.PI * 2;
+                Vector3 offset = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
+                
+                for (int j = 0; j < segments; j++)
+                {
+                    float a1 = (j / (float)segments) * Mathf.PI * 2;
+                    float a2 = ((j + 1) / (float)segments) * Mathf.PI * 2;
+                    
+                    Vector3 p1 = center + offset * Mathf.Cos(a1) * radius + Vector3.up * Mathf.Sin(a1) * radius;
+                    Vector3 p2 = center + offset * Mathf.Cos(a2) * radius + Vector3.up * Mathf.Sin(a2) * radius;
+                    
+                    player.SendConsoleCommand("ddraw.line", dur, col, p1, p2);
+                }
+            }
+            
+            // Draw text label
+            player.SendConsoleCommand("ddraw.text", dur, col, center + new Vector3(0, radius + 2f, 0), "JOIN SPHERE");
         }
 
         private void CallMiddleware(string text)
