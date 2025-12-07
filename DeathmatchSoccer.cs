@@ -1125,34 +1125,99 @@ namespace Oxide.Plugins
             scoreRed = 0; scoreBlue = 0; scoreBlack = 0;
             
             // GOAL SWAPPING LOGIC
-            // Deactivate loser's goal and activate black goal at that position
-            if (loser == "red")
-            {
-                activeGoals["red"] = false;
-                activeGoals["black1"] = true;  // Black goal at red position
-                PrintToChat($"Black team taking over RED goal position!");
-            }
-            else if (loser == "blue")
-            {
-                activeGoals["blue"] = false;
-                activeGoals["black2"] = true;  // Black goal at blue position
-                PrintToChat($"Black team taking over BLUE goal position!");
-            }
-            else if (loser == "black")
+            // Determine current goal states before making changes
+            bool winnerIsBlack = (winner == "black");
+            bool loserIsBlack = (loser == "black");
+            bool waitingIsBlack = (waitingTeam == "black");
+            
+            if (loserIsBlack)
             {
                 // Black is leaving, need to determine which black goal to deactivate
-                // and activate the original team goal
+                // and activate the original team goal for the waiting team
                 if (activeGoals["black1"]) // Black was using black1 (at red position)
                 {
                     activeGoals["black1"] = false;
-                    activeGoals["red"] = true;
-                    PrintToChat($"Red team reclaiming their goal!");
+                    // Waiting team gets red goal position
+                    if (waitingTeam == "red")
+                    {
+                        activeGoals["red"] = true;
+                        PrintToChat($"Red team reclaiming their goal!");
+                    }
+                    else if (waitingTeam == "blue")
+                    {
+                        // Black1 is at red position, so we need black2 for blue
+                        activeGoals["black2"] = true;
+                        PrintToChat($"Black team moving to BLUE goal position!");
+                    }
                 }
                 else if (activeGoals["black2"]) // Black was using black2 (at blue position)
                 {
                     activeGoals["black2"] = false;
-                    activeGoals["blue"] = true;
-                    PrintToChat($"Blue team reclaiming their goal!");
+                    // Waiting team gets blue goal position
+                    if (waitingTeam == "blue")
+                    {
+                        activeGoals["blue"] = true;
+                        PrintToChat($"Blue team reclaiming their goal!");
+                    }
+                    else if (waitingTeam == "red")
+                    {
+                        // Black2 is at blue position, so we need black1 for red
+                        activeGoals["black1"] = true;
+                        PrintToChat($"Black team moving to RED goal position!");
+                    }
+                }
+            }
+            else if (winnerIsBlack)
+            {
+                // Black won, loser is red or blue
+                // Black stays at current position, loser's goal gets deactivated
+                // Waiting team takes over loser's position
+                if (loser == "red")
+                {
+                    activeGoals["red"] = false;
+                    // Waiting team enters at red position
+                    if (waitingTeam == "blue")
+                    {
+                        activeGoals["blue"] = true;
+                        PrintToChat($"Blue team entering at their goal!");
+                    }
+                    else // Waiting is red (shouldn't happen but handle it)
+                    {
+                        activeGoals["black1"] = true;
+                        PrintToChat($"Setup at RED goal position!");
+                    }
+                }
+                else if (loser == "blue")
+                {
+                    activeGoals["blue"] = false;
+                    // Waiting team enters at blue position
+                    if (waitingTeam == "red")
+                    {
+                        activeGoals["red"] = true;
+                        PrintToChat($"Red team entering at their goal!");
+                    }
+                    else // Waiting is blue (shouldn't happen but handle it)
+                    {
+                        activeGoals["black2"] = true;
+                        PrintToChat($"Setup at BLUE goal position!");
+                    }
+                }
+            }
+            else
+            {
+                // Winner is red or blue, loser is red or blue, waiting is black
+                // Deactivate loser's goal and activate black goal at that position
+                if (loser == "red")
+                {
+                    activeGoals["red"] = false;
+                    activeGoals["black1"] = true;  // Black goal at red position
+                    PrintToChat($"Black team taking over RED goal position!");
+                }
+                else if (loser == "blue")
+                {
+                    activeGoals["blue"] = false;
+                    activeGoals["black2"] = true;  // Black goal at blue position
+                    PrintToChat($"Black team taking over BLUE goal position!");
                 }
             }
             
