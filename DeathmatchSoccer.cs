@@ -31,6 +31,7 @@ namespace Oxide.Plugins
      * /set_red, /set_blue - Set red and blue goal positions
      * /set_black1, /set_black2 - Set black goals (at red and blue positions)
      * /set_center - Set ball spawn position
+     * /set_lobby_sphere - Set single lobby sphere position (spawns purple sphere entity)
      * /save_goals, /load_goals - Persist arena data
      * /start_match - Begin the match
      * /rotation - Toggle rotation mode ON/OFF
@@ -41,6 +42,7 @@ namespace Oxide.Plugins
      * PLAYER COMMANDS:
      * /join [team] - Join a team (shows UI if no team specified)
      * /teams - Show team selection UI
+     * Walk into lobby sphere - Triggers team selection UI
      */
     [Info("DeathmatchSoccer", "KillaDome", "5.4.0")]
     [Description("3-Team Soccer with Lobby System and Celebrations")]
@@ -140,9 +142,8 @@ namespace Oxide.Plugins
         
         // LOBBY SYSTEM
         private bool lobbyActive = true;
-        private Vector3 blueSpherePos = Vector3.zero;
-        private Vector3 redSpherePos = Vector3.zero;
-        private Vector3 blackSpherePos = Vector3.zero;
+        private Vector3 lobbySpherePos = Vector3.zero;
+        private BaseEntity lobbySphereEntity = null;
         private float sphereRadius = 3.0f;
         private Dictionary<ulong, float> lastSphereInteraction = new Dictionary<ulong, float>();
         private Timer lobbyTimer;
@@ -373,9 +374,18 @@ namespace Oxide.Plugins
         [ChatCommand("set_black1")] private void CmdSetBlack1(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos1=p.transform.position; blackGoalRot1=p.transform.rotation; SendReply(p, "Black Goal 1 Set (at Red position)."); DrawGoal(p, blackGoalPos1, blackGoalRot1, Color.black, 5f); }}
         [ChatCommand("set_black2")] private void CmdSetBlack2(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos2=p.transform.position; blackGoalRot2=p.transform.rotation; SendReply(p, "Black Goal 2 Set (at Blue position)."); DrawGoal(p, blackGoalPos2, blackGoalRot2, Color.black, 5f); }}
         [ChatCommand("set_center")] private void CmdSetCenter(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ centerPos=p.transform.position; SendReply(p, "Center Set."); }}
-        [ChatCommand("set_blue_sphere")] private void CmdSetBlueSphere(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blueSpherePos=p.transform.position; SendReply(p, "Blue Lobby Sphere Set."); DrawSphere(p, blueSpherePos, Color.blue, 5f); }}
-        [ChatCommand("set_red_sphere")] private void CmdSetRedSphere(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ redSpherePos=p.transform.position; SendReply(p, "Red Lobby Sphere Set."); DrawSphere(p, redSpherePos, Color.red, 5f); }}
-        [ChatCommand("set_black_sphere")] private void CmdSetBlackSphere(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackSpherePos=p.transform.position; SendReply(p, "Black Lobby Sphere Set."); DrawSphere(p, blackSpherePos, Color.black, 5f); }}
+        [ChatCommand("set_lobby_sphere")] 
+        private void CmdSetLobbySphere(BasePlayer p, string c, string[] a) 
+        { 
+            if(!p.IsAdmin) return;
+            
+            lobbySpherePos = p.transform.position;
+            SendReply(p, "Lobby Sphere Position Set.");
+            
+            // Spawn the purple sphere entity
+            SpawnLobbySphere();
+            SendReply(p, "Purple lobby sphere spawned. Players can walk into it to join teams.");
+        }
         [ChatCommand("reset_ball")] private void CmdResetBall(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ SpawnBall(); SendReply(p, "Ball Reset."); }}
         
         [ChatCommand("rotation")]
@@ -1305,9 +1315,15 @@ namespace Oxide.Plugins
             lobbyActive = true;
             lobbyCountdown = seconds;
             
+            // Spawn lobby sphere if position is set
+            if (lobbySpherePos != Vector3.zero)
+            {
+                SpawnLobbySphere();
+            }
+            
             PrintToChat("═══════════════════════════════════");
             PrintToChat($"LOBBY ACTIVE - Next match in {seconds} seconds");
-            PrintToChat("Join a team sphere or use /join command");
+            PrintToChat("Walk into purple sphere or use /join command");
             PrintToChat("═══════════════════════════════════");
             
             if (lobbyTimer != null) lobbyTimer.Destroy();
@@ -1340,6 +1356,12 @@ namespace Oxide.Plugins
         {
             lobbyActive = false;
             if (lobbyTimer != null) lobbyTimer.Destroy();
+            
+            // Remove lobby sphere when match starts
+            if (lobbySphereEntity != null && !lobbySphereEntity.IsDestroyed)
+            {
+                lobbySphereEntity.Kill();
+            }
             
             // Reset for new tournament
             scoreRed = 0; scoreBlue = 0; scoreBlack = 0;
@@ -1396,15 +1418,13 @@ namespace Oxide.Plugins
                 {
                     if (player == null || !player.IsConnected) continue;
                     
-                    // Check distance to each sphere
-                    CheckSphereProximity(player, "blue", blueSpherePos);
-                    CheckSphereProximity(player, "red", redSpherePos);
-                    CheckSphereProximity(player, "black", blackSpherePos);
+                    // Check distance to lobby sphere
+                    CheckSphereProximity(player, lobbySpherePos);
                 }
             });
         }
         
-        private void CheckSphereProximity(BasePlayer player, string team, Vector3 spherePos)
+        private void CheckSphereProximity(BasePlayer player, Vector3 spherePos)
         {
             if (spherePos == Vector3.zero) return;
             
@@ -1417,18 +1437,39 @@ namespace Oxide.Plugins
                     UnityEngine.Time.time - lastSphereInteraction[player.userID] > 3f)
                 {
                     lastSphereInteraction[player.userID] = UnityEngine.Time.time;
-                    OnPlayerEnterSphere(player, team);
+                    OnPlayerEnterSphere(player);
                 }
             }
         }
         
-        private void OnPlayerEnterSphere(BasePlayer player, string team)
+        private void OnPlayerEnterSphere(BasePlayer player)
         {
             // Show team selection UI
             ShowTeamSelectUI(player);
             
             // Show hint
-            player.ShowToast(GameTip.Styles.Blue_Normal, $"Entering {teamConfigs[team].Tag} sphere!");
+            player.ShowToast(GameTip.Styles.Blue_Normal, "Walk into sphere to join a team!");
+        }
+        
+        private void SpawnLobbySphere()
+        {
+            // Remove old sphere if it exists
+            if (lobbySphereEntity != null && !lobbySphereEntity.IsDestroyed)
+            {
+                lobbySphereEntity.Kill();
+            }
+            
+            // Spawn purple sphere entity
+            lobbySphereEntity = GameManager.server.CreateEntity("assets/bundled/prefabs/modding/events/twitch/br_sphere_purple.prefab", lobbySpherePos);
+            if (lobbySphereEntity != null)
+            {
+                lobbySphereEntity.Spawn();
+                Puts("Lobby sphere spawned at " + lobbySpherePos);
+            }
+            else
+            {
+                Puts("Failed to spawn lobby sphere entity!");
+            }
         }
         
         // ==========================================
