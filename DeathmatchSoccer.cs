@@ -68,8 +68,8 @@ namespace Oxide.Plugins
         // IMAGES
         // 3 Scoreboard backgrounds for different matchups
         private string ImgScoreboardBgRedBlue = "https://i.imgur.com/6Xq6x9q.png"; 
-        private string ImgScoreboardBgBlackRed = "https://i.imgur.com/PLACEHOLDER1.png"; // TODO: Replace with actual URL
-        private string ImgScoreboardBgBlueBlack = "https://i.imgur.com/PLACEHOLDER2.png"; // TODO: Replace with actual URL
+        private string ImgScoreboardBgBlackRed = "https://i.imgur.com/6Xq6x9q.png"; // Using default for now - replace with custom
+        private string ImgScoreboardBgBlueBlack = "https://i.imgur.com/6Xq6x9q.png"; // Using default for now - replace with custom
         
         // 3 Goal banner images for different matchups
         private string ImgGoalBannerRedBlue = "https://i.imgur.com/Jb9y1Xm.png";
@@ -242,6 +242,7 @@ namespace Oxide.Plugins
 
         private void SaveArenaData()
         {
+            Puts($"[Data] Saving arena data to file");
             var data = new ArenaData
             {
                 Rx = redGoalPos.x, Ry = redGoalPos.y, Rz = redGoalPos.z,
@@ -257,33 +258,54 @@ namespace Oxide.Plugins
                 Lbx = lobbySpawnPos.x, Lby = lobbySpawnPos.y, Lbz = lobbySpawnPos.z,
                 Lsx = loserSpawnPos.x, Lsy = loserSpawnPos.y, Lsz = loserSpawnPos.z
             };
+            Puts($"[Data] Lobby spawn saved: {lobbySpawnPos}");
+            Puts($"[Data] Loser spawn saved: {loserSpawnPos}");
             Interface.Oxide.DataFileSystem.WriteObject(DataFileName, data);
+            Puts($"[Data] Arena data saved successfully to {DataFileName}");
         }
 
         private void LoadArenaData()
         {
+            Puts($"[Data] Loading arena data from file");
             if (Interface.Oxide.DataFileSystem.ExistsDatafile(DataFileName))
             {
-                var data = Interface.Oxide.DataFileSystem.ReadObject<ArenaData>(DataFileName);
-                if (data != null)
+                try
                 {
-                    redGoalPos = new Vector3(data.Rx, data.Ry, data.Rz);
-                    blueGoalPos = new Vector3(data.Bx, data.By, data.Bz);
-                    blackGoalPos1 = new Vector3(data.Bl1x, data.Bl1y, data.Bl1z);
-                    blackGoalPos2 = new Vector3(data.Bl2x, data.Bl2y, data.Bl2z);
-                    centerPos = new Vector3(data.Cx, data.Cy, data.Cz);
-                    redGoalRot = new Quaternion(data.Rqx, data.Rqy, data.Rqz, data.Rqw);
-                    blueGoalRot = new Quaternion(data.Bqx, data.Bqy, data.Bqz, data.Bqw);
-                    blackGoalRot1 = new Quaternion(data.Bl1qx, data.Bl1qy, data.Bl1qz, data.Bl1qw);
-                    blackGoalRot2 = new Quaternion(data.Bl2qx, data.Bl2qy, data.Bl2qz, data.Bl2qw);
-                    if (data.Gw > 0) { GoalWidth = data.Gw; GoalHeight = data.Gh; GoalDepth = data.Gd; }
+                    var data = Interface.Oxide.DataFileSystem.ReadObject<ArenaData>(DataFileName);
+                    if (data != null)
+                    {
+                        redGoalPos = new Vector3(data.Rx, data.Ry, data.Rz);
+                        blueGoalPos = new Vector3(data.Bx, data.By, data.Bz);
+                        blackGoalPos1 = new Vector3(data.Bl1x, data.Bl1y, data.Bl1z);
+                        blackGoalPos2 = new Vector3(data.Bl2x, data.Bl2y, data.Bl2z);
+                        centerPos = new Vector3(data.Cx, data.Cy, data.Cz);
+                        redGoalRot = new Quaternion(data.Rqx, data.Rqy, data.Rqz, data.Rqw);
+                        blueGoalRot = new Quaternion(data.Bqx, data.Bqy, data.Bqz, data.Bqw);
+                        blackGoalRot1 = new Quaternion(data.Bl1qx, data.Bl1qy, data.Bl1qz, data.Bl1qw);
+                        blackGoalRot2 = new Quaternion(data.Bl2qx, data.Bl2qy, data.Bl2qz, data.Bl2qw);
+                        if (data.Gw > 0) { GoalWidth = data.Gw; GoalHeight = data.Gh; GoalDepth = data.Gd; }
                     
-                    // Load spawn positions
-                    lobbySpawnPos = new Vector3(data.Lbx, data.Lby, data.Lbz);
-                    loserSpawnPos = new Vector3(data.Lsx, data.Lsy, data.Lsz);
-                    
-                    Puts("Arena Data Loaded.");
+                        // Load spawn positions
+                        lobbySpawnPos = new Vector3(data.Lbx, data.Lby, data.Lbz);
+                        loserSpawnPos = new Vector3(data.Lsx, data.Lsy, data.Lsz);
+                        
+                        Puts($"[Data] Loaded lobby spawn: {lobbySpawnPos}");
+                        Puts($"[Data] Loaded loser spawn: {loserSpawnPos}");
+                        Puts("[Data] Arena data loaded successfully.");
+                    }
+                    else
+                    {
+                        Puts("[Data] ERROR: Arena data file exists but data is null");
+                    }
                 }
+                catch (System.Exception ex)
+                {
+                    Puts($"[Data] ERROR: Failed to load arena data - {ex.Message}");
+                }
+            }
+            else
+            {
+                Puts($"[Data] No arena data file found at {DataFileName}, using defaults");
             }
         }
 
@@ -428,20 +450,26 @@ namespace Oxide.Plugins
         { 
             if(!p.IsAdmin) return;
             
+            Puts($"[LobbySpawn] Admin {p.displayName} running /set_lobby_spawn at position {p.transform.position}");
+            
             // Get position slightly above ground to prevent spawning in air
             RaycastHit hit;
+            Puts($"[LobbySpawn] Performing raycast from {p.transform.position + Vector3.up} going down");
             if (Physics.Raycast(p.transform.position + Vector3.up, Vector3.down, out hit, 10f, LayerMask.GetMask("Terrain", "World", "Construction")))
             {
                 lobbySpawnPos = hit.point + new Vector3(0, 0.5f, 0); // Slightly above ground
+                Puts($"[LobbySpawn] Ground found at {hit.point}, setting spawn 0.5m above at: {lobbySpawnPos}");
             }
             else
             {
                 lobbySpawnPos = p.transform.position;
+                Puts($"[LobbySpawn] No ground found via raycast, using player position: {lobbySpawnPos}");
             }
             
             SaveArenaData();
+            Puts($"[LobbySpawn] Lobby spawn saved to data file");
             SendReply(p, $"✓ Lobby spawn point set at {lobbySpawnPos}! Players will teleport here during lobby.");
-            Puts($"Lobby spawn set to: {lobbySpawnPos}");
+            Puts($"[LobbySpawn] Confirmation sent to admin");
         }
         
         [ChatCommand("set_loser_spawn")]
@@ -731,29 +759,96 @@ namespace Oxide.Plugins
         }
         
         // Add kill to feed
-        private void AddKillToFeed(BasePlayer killer, BasePlayer victim)
+        private void AddKillToFeed(BasePlayer killer, BasePlayer victim, string deathType = "Player")
         {
-            if (killer == null || victim == null) return;
+            if (victim == null) return;
             
-            string killerTeam = redTeam.Contains(killer.userID) ? "red" :
-                               blueTeam.Contains(killer.userID) ? "blue" : "black";
+            Puts($"[KillFeed] Adding kill feed entry for {victim.displayName}, death type: {deathType}");
+            
+            string killerName = "Unknown";
+            string killerTeam = "";
             string victimTeam = redTeam.Contains(victim.userID) ? "red" :
-                               blueTeam.Contains(victim.userID) ? "blue" : "black";
+                               blueTeam.Contains(victim.userID) ? "blue" : 
+                               blackTeam.Contains(victim.userID) ? "black" : "";
             
-            var messages = GetFunnyKillMessages();
-            string randomMessage = messages[UnityEngine.Random.Range(0, messages.Count)];
+            string message = "";
+            
+            // Determine message based on death type
+            if (deathType == "Fall")
+            {
+                // Fall damage messages
+                var fallMessages = new List<string>
+                {
+                    "fell to their death",
+                    "forgot how to land",
+                    "faceplanted from a great height",
+                    "learned about gravity the hard way",
+                    "took the express route down",
+                    "forgot their parachute",
+                    "went splat"
+                };
+                message = fallMessages[UnityEngine.Random.Range(0, fallMessages.Count)];
+                killerName = "Fall Damage";
+            }
+            else if (deathType == "Suicide")
+            {
+                // Suicide messages
+                var suicideMessages = new List<string>
+                {
+                    "took the easy way out",
+                    "said fuck this shit",
+                    "quit the game",
+                    "removed themselves from the match",
+                    "rage quit IRL"
+                };
+                message = suicideMessages[UnityEngine.Random.Range(0, suicideMessages.Count)];
+                killerName = "Suicide";
+            }
+            else if (deathType == "Unknown")
+            {
+                // Environmental/unknown death messages
+                var unknownMessages = new List<string>
+                {
+                    "died somehow",
+                    "got rekt by the environment",
+                    "ceased to exist",
+                    "had a mysterious accident",
+                    "got deleted from reality"
+                };
+                message = unknownMessages[UnityEngine.Random.Range(0, unknownMessages.Count)];
+                killerName = "The Environment";
+            }
+            else if (killer != null)
+            {
+                // Player kill messages
+                killerName = killer.displayName;
+                killerTeam = redTeam.Contains(killer.userID) ? "red" :
+                            blueTeam.Contains(killer.userID) ? "blue" : "black";
+                
+                var messages = GetFunnyKillMessages();
+                message = messages[UnityEngine.Random.Range(0, messages.Count)];
+            }
+            else
+            {
+                // Fallback
+                message = "died";
+                killerName = "Unknown";
+            }
+            
+            Puts($"[KillFeed] Killer: {killerName}, Victim: {victim.displayName}, Message: {message}");
             
             var entry = new KillFeedEntry
             {
-                KillerName = killer.displayName,
+                KillerName = killerName,
                 VictimName = victim.displayName,
                 KillerTeam = killerTeam,
                 VictimTeam = victimTeam,
-                Message = randomMessage,
+                Message = message,
                 Timestamp = UnityEngine.Time.time
             };
             
             killFeed.Insert(0, entry);
+            Puts($"[KillFeed] Kill feed now has {killFeed.Count} entries");
             
             // Keep only last 5 entries
             if (killFeed.Count > MAX_KILL_FEED_ENTRIES)
@@ -762,6 +857,7 @@ namespace Oxide.Plugins
             }
             
             // Update kill feed UI for all players
+            Puts($"[KillFeed] Showing kill feed to all players");
             UpdateKillFeedForAll();
             
             // Auto-remove after 10 seconds
@@ -1344,14 +1440,11 @@ namespace Oxide.Plugins
             BaseEntity entity = go.ToBaseEntity();
             if (entity == null || player == null) return;
             
-            // Only auto-destroy during active match
-            if (!matchStarted) return;
-
-            // Auto-destroy ALL player-placed entities after 7 seconds
+            // Auto-destroy ALL player-placed entities after 7 seconds (ALWAYS active, not just during matches)
             string shortName = entity.ShortPrefabName ?? "";
             string fullName = entity.PrefabName ?? "";
             
-            Puts($"[Entity Debug] Player {player.displayName} placed: {shortName} (Full: {fullName})");
+            Puts($"[EntityBuilt] Player {player.displayName} placed {shortName} at {entity.transform.position}");
             
             // Check if it's a deployable/buildable (barricades, walls, boxes, etc.)
             bool shouldDestroy = shortName.Contains("barricade") || 
@@ -1368,28 +1461,40 @@ namespace Oxide.Plugins
             
             if (shouldDestroy)
             {
-                Puts($"[Entity] {shortName} placed by {player.displayName} (ID: {entity.net.ID}), will destroy in 7 seconds");
+                Puts($"[EntityBuilt] Entity {shortName} WILL be destroyed in 7 seconds (ID: {entity.net.ID})");
                 SendReply(player, $"⚠ {shortName} will auto-destroy in 7 seconds!");
                 
                 // Store timer reference
                 var destroyTimer = timer.Once(7f, () =>
                 {
+                    Puts($"[EntityDestroy] Timer fired for {shortName} ID: {entity.net.ID}");
+                    
                     if (entity != null && !entity.IsDestroyed)
                     {
-                        Puts($"[Entity] Destroying {shortName} ID: {entity.net.ID}");
+                        Puts($"[EntityDestroy] Entity still exists, proceeding with destruction");
+                        Puts($"[EntityDestroy] Destroying {shortName} ID: {entity.net.ID}");
                         entity.Kill(BaseNetworkable.DestroyMode.None);
+                        Puts($"[EntityDestroy] Entity destroyed successfully");
+                    }
+                    else
+                    {
+                        Puts($"[EntityDestroy] Entity already destroyed or null ID: {entity?.net.ID}");
                     }
                     
                     // Clean up timer reference
                     if (entity != null)
+                    {
                         entityTimers.Remove(entity.net.ID);
+                        Puts($"[EntityDestroy] Removed timer from tracking dictionary");
+                    }
                 });
                 
                 entityTimers[entity.net.ID] = destroyTimer;
+                Puts($"[EntityBuilt] Timer stored with ID: {entity.net.ID}");
             }
             else
             {
-                Puts($"[Entity Debug] Not destroying: {shortName}");
+                Puts($"[EntityBuilt] Entity {shortName} will NOT be destroyed (not in destruction list)");
             }
         }
         
@@ -1418,32 +1523,74 @@ namespace Oxide.Plugins
                 {
                     Puts($"[Death] Player {player.displayName} died, cleaning up corpse and items");
                     
-                    // Add to kill feed if killed by another player during match
-                    if (matchStarted && info != null && info.InitiatorPlayer != null && info.InitiatorPlayer != player)
+                    // Determine death cause and add to kill feed (ALWAYS active, not just during matches)
+                    string deathCause = "Unknown";
+                    BasePlayer killer = null;
+                    
+                    if (info != null)
                     {
-                        AddKillToFeed(info.InitiatorPlayer, player);
+                        // Check death type
+                        var majorDamageType = info.damageTypes.GetMajorityDamageType();
+                        Puts($"[KillFeed] Player {player.displayName} died");
+                        Puts($"[KillFeed] Death cause: {majorDamageType}");
+                        
+                        // Fall damage
+                        if (majorDamageType == DamageType.Fall)
+                        {
+                            Puts($"[KillFeed] This is a fall damage death");
+                            AddKillToFeed(null, player, "Fall");
+                        }
+                        // Player killed by another player
+                        else if (info.InitiatorPlayer != null && info.InitiatorPlayer != player)
+                        {
+                            killer = info.InitiatorPlayer;
+                            Puts($"[KillFeed] Killer: {killer.displayName}");
+                            AddKillToFeed(killer, player, "Player");
+                        }
+                        // Suicide or self-damage
+                        else if (info.InitiatorPlayer == player)
+                        {
+                            Puts($"[KillFeed] This is a suicide");
+                            AddKillToFeed(null, player, "Suicide");
+                        }
+                        // Other environmental/unknown death
+                        else
+                        {
+                            Puts($"[KillFeed] Unknown/environmental death");
+                            AddKillToFeed(null, player, "Unknown");
+                        }
+                    }
+                    else
+                    {
+                        Puts($"[KillFeed] No HitInfo available, treating as unknown death");
+                        AddKillToFeed(null, player, "Unknown");
                     }
                     
                     // Store player position for item cleanup
                     Vector3 deathPos = player.transform.position;
+                    Puts($"[DeathCleanup] Player {player.displayName} died at position {deathPos}");
                     
                     // Find and delete corpse on next frame
                     NextTick(() =>
                     {
+                        Puts($"[DeathCleanup] Finding corpses for player ID: {player.userID}");
                         // Delete corpse
                         var corpses = UnityEngine.Object.FindObjectsOfType<PlayerCorpse>();
                         foreach (var corpse in corpses)
                         {
                             if (corpse.playerSteamID == player.userID)
                             {
-                                Puts($"[Death] Deleting corpse for {player.displayName}");
+                                Puts($"[DeathCleanup] Found corpse for {player.displayName}, deleting");
                                 corpse.Kill(BaseNetworkable.DestroyMode.None);
+                                Puts($"[DeathCleanup] Deleted corpse for {player.displayName}");
                             }
                         }
                         
                         // Delete dropped items and loot bags near death position
+                        Puts($"[DeathCleanup] Scanning 5m radius for dropped items at {deathPos}");
                         var nearbyEntities = new List<BaseEntity>();
                         Vis.Entities(deathPos, 5f, nearbyEntities);
+                        Puts($"[DeathCleanup] Found {nearbyEntities.Count} entities near death position");
                         
                         foreach (var ent in nearbyEntities)
                         {
@@ -1452,13 +1599,13 @@ namespace Oxide.Plugins
                             // Delete dropped weapons
                             if (ent is DroppedItem || ent is DroppedItemContainer)
                             {
-                                Puts($"[Death] Deleting dropped item: {ent.ShortPrefabName}");
+                                Puts($"[DeathCleanup] Deleting dropped item: {ent.ShortPrefabName}");
                                 ent.Kill(BaseNetworkable.DestroyMode.None);
                             }
                             // Delete loot containers/bags
                             else if (ent is LootContainer || ent is DroppedItemContainer)
                             {
-                                Puts($"[Death] Deleting loot container: {ent.ShortPrefabName}");
+                                Puts($"[DeathCleanup] Deleting loot container: {ent.ShortPrefabName}");
                                 ent.Kill(BaseNetworkable.DestroyMode.None);
                             }
                             // Delete any item entity
@@ -1466,7 +1613,7 @@ namespace Oxide.Plugins
                                     (ent.ShortPrefabName.Contains("item_drop") || 
                                      ent.ShortPrefabName.Contains("loot")))
                             {
-                                Puts($"[Death] Deleting item: {ent.ShortPrefabName}");
+                                Puts($"[DeathCleanup] Deleting item: {ent.ShortPrefabName}");
                                 ent.Kill(BaseNetworkable.DestroyMode.None);
                             }
                         }
