@@ -11,29 +11,39 @@ using System;
 namespace Oxide.Plugins
 {
     /*
-     * DeathmatchSoccer - 3-Team Soccer Battle Plugin
+     * DeathmatchSoccer - 3-Team Soccer Battle Plugin with Goal Swapping Rotation
      * 
      * FEATURES:
      * - 3-Team System: Blue (SHELL-SEA/GRUB), Red (Loot-pool/DOORCAMPER), Black (PZG/ROAMER)
+     * - Goal Swapping Rotation: 2 teams play, losing team's goal is replaced by waiting team's goal
      * - Custom Skins: Each team can have unique skins via Skins.cs plugin
-     * - Modern UI: Team selection menu, 3-team scoreboard, role selection
+     * - Modern UI: Team selection menu, dynamic scoreboard, role selection
      * - 2 Roles: Striker (100HP, Thompson) and Goalie (200HP, SPAS-12)
+     * - Active Goal System: Only active goals count for scoring
+     * 
+     * ROTATION SYSTEM:
+     * - 2 black goals placed (one at red position, one at blue position)
+     * - When a team loses, their goal is deactivated and black goal at that position activates
+     * - Winner continues at their goal, black team takes over loser's goal position
+     * - No teleportation needed - seamless goal swapping
      * 
      * ADMIN COMMANDS:
-     * /set_red, /set_blue, /set_black - Set goal positions
+     * /set_red, /set_blue - Set red and blue goal positions
+     * /set_black1, /set_black2 - Set black goals (at red and blue positions)
      * /set_center - Set ball spawn position
      * /save_goals, /load_goals - Persist arena data
      * /start_match - Begin the match
+     * /rotation - Toggle rotation mode ON/OFF
      * /setskin <team> <item> <skinId> - Configure team skins
      * /showskins - Display all skin configurations
-     * /goal_debug - Toggle goal zone visualization
+     * /goal_debug - Toggle goal zone visualization (shows active/inactive goals)
      * 
      * PLAYER COMMANDS:
      * /join [team] - Join a team (shows UI if no team specified)
      * /teams - Show team selection UI
      */
-    [Info("DeathmatchSoccer", "KillaDome", "5.2.0")]
-    [Description("3-Team Deathmatch Soccer with Rotation Mode and Custom Skins")]
+    [Info("DeathmatchSoccer", "KillaDome", "5.3.0")]
+    [Description("3-Team Soccer with Goal Swapping Rotation System")]
     public class DeathmatchSoccer : RustPlugin
     {
         // ==========================================
@@ -110,8 +120,8 @@ namespace Oxide.Plugins
         // STATE
         private BaseEntity activeBall;
         private BasePlayer lastKicker; 
-        private Vector3 redGoalPos, blueGoalPos, blackGoalPos, centerPos;
-        private Quaternion redGoalRot, blueGoalRot, blackGoalRot;
+        private Vector3 redGoalPos, blueGoalPos, blackGoalPos1, blackGoalPos2, centerPos;
+        private Quaternion redGoalRot, blueGoalRot, blackGoalRot1, blackGoalRot2;
         
         private int scoreRed = 0;
         private int scoreBlue = 0;
@@ -120,13 +130,21 @@ namespace Oxide.Plugins
         private bool matchStarted = false; 
         private bool debugActive = false;
         
-        // ROTATION SYSTEM (2 play, 1 waits)
+        // ROTATION SYSTEM - Goal Swapping (2 play, 1 waits)
         private bool rotationMode = true; // Enable rotation by default
         private string waitingTeam = "black"; // Team waiting for next match
         private string team1Playing = "blue";
         private string team2Playing = "red";
-        private Vector3 waitingAreaPos = Vector3.zero;
         private int matchNumber = 1;
+        
+        // ACTIVE GOALS - Track which goals are currently in play
+        private Dictionary<string, bool> activeGoals = new Dictionary<string, bool>
+        {
+            { "red", true },
+            { "blue", true },
+            { "black1", false },  // Black goal at red position (inactive initially)
+            { "black2", false }   // Black goal at blue position (inactive initially)
+        };
         
         // TEAM CONFIGURATIONS
         private Dictionary<string, TeamConfig> teamConfigs = new Dictionary<string, TeamConfig>
@@ -140,7 +158,7 @@ namespace Oxide.Plugins
         private Dictionary<ulong, bool> ballRangeState = new Dictionary<ulong, bool>();
         
         // TICKER
-        private List<string> tickerMessages = new List<string> { "ROTATION MODE: 2 PLAY, 1 WAITS", "WINNER PLAYS WAITING TEAM", "SHOOT BALL TO SCORE", "KILL ENEMIES", "FIRST TO 5 WINS" };
+        private List<string> tickerMessages = new List<string> { "GOAL SWAPPING ROTATION", "LOSER'S GOAL REPLACED BY WAITING TEAM", "SHOOT BALL TO SCORE", "KILL ENEMIES", "FIRST TO 5 WINS" };
         private int tickerIndex = 0;
 
         // TEAMS
@@ -168,11 +186,13 @@ namespace Oxide.Plugins
         {
             public float Rx, Ry, Rz; // Red Pos
             public float Bx, By, Bz; // Blue Pos
-            public float Blx, Bly, Blz; // Black Pos
+            public float Bl1x, Bl1y, Bl1z; // Black1 Pos (at red position)
+            public float Bl2x, Bl2y, Bl2z; // Black2 Pos (at blue position)
             public float Cx, Cy, Cz; // Center Pos
             public float Rqx, Rqy, Rqz, Rqw; // Red Rot
             public float Bqx, Bqy, Bqz, Bqw; // Blue Rot
-            public float Blqx, Blqy, Blqz, Blqw; // Black Rot
+            public float Bl1qx, Bl1qy, Bl1qz, Bl1qw; // Black1 Rot
+            public float Bl2qx, Bl2qy, Bl2qz, Bl2qw; // Black2 Rot
             public float Gw, Gh, Gd; // Dimensions
         }
 
@@ -182,11 +202,13 @@ namespace Oxide.Plugins
             {
                 Rx = redGoalPos.x, Ry = redGoalPos.y, Rz = redGoalPos.z,
                 Bx = blueGoalPos.x, By = blueGoalPos.y, Bz = blueGoalPos.z,
-                Blx = blackGoalPos.x, Bly = blackGoalPos.y, Blz = blackGoalPos.z,
+                Bl1x = blackGoalPos1.x, Bl1y = blackGoalPos1.y, Bl1z = blackGoalPos1.z,
+                Bl2x = blackGoalPos2.x, Bl2y = blackGoalPos2.y, Bl2z = blackGoalPos2.z,
                 Cx = centerPos.x, Cy = centerPos.y, Cz = centerPos.z,
                 Rqx = redGoalRot.x, Rqy = redGoalRot.y, Rqz = redGoalRot.z, Rqw = redGoalRot.w,
                 Bqx = blueGoalRot.x, Bqy = blueGoalRot.y, Bqz = blueGoalRot.z, Bqw = blueGoalRot.w,
-                Blqx = blackGoalRot.x, Blqy = blackGoalRot.y, Blqz = blackGoalRot.z, Blqw = blackGoalRot.w,
+                Bl1qx = blackGoalRot1.x, Bl1qy = blackGoalRot1.y, Bl1qz = blackGoalRot1.z, Bl1qw = blackGoalRot1.w,
+                Bl2qx = blackGoalRot2.x, Bl2qy = blackGoalRot2.y, Bl2qz = blackGoalRot2.z, Bl2qw = blackGoalRot2.w,
                 Gw = GoalWidth, Gh = GoalHeight, Gd = GoalDepth
             };
             Interface.Oxide.DataFileSystem.WriteObject(DataFileName, data);
@@ -201,11 +223,13 @@ namespace Oxide.Plugins
                 {
                     redGoalPos = new Vector3(data.Rx, data.Ry, data.Rz);
                     blueGoalPos = new Vector3(data.Bx, data.By, data.Bz);
-                    blackGoalPos = new Vector3(data.Blx, data.Bly, data.Blz);
+                    blackGoalPos1 = new Vector3(data.Bl1x, data.Bl1y, data.Bl1z);
+                    blackGoalPos2 = new Vector3(data.Bl2x, data.Bl2y, data.Bl2z);
                     centerPos = new Vector3(data.Cx, data.Cy, data.Cz);
                     redGoalRot = new Quaternion(data.Rqx, data.Rqy, data.Rqz, data.Rqw);
                     blueGoalRot = new Quaternion(data.Bqx, data.Bqy, data.Bqz, data.Bqw);
-                    blackGoalRot = new Quaternion(data.Blqx, data.Blqy, data.Blqz, data.Blqw);
+                    blackGoalRot1 = new Quaternion(data.Bl1qx, data.Bl1qy, data.Bl1qz, data.Bl1qw);
+                    blackGoalRot2 = new Quaternion(data.Bl2qx, data.Bl2qy, data.Bl2qz, data.Bl2qw);
                     if (data.Gw > 0) { GoalWidth = data.Gw; GoalHeight = data.Gh; GoalDepth = data.Gd; }
                     Puts("Arena Data Loaded.");
                 }
@@ -281,12 +305,23 @@ namespace Oxide.Plugins
                 team1Playing = "blue";
                 team2Playing = "red";
                 waitingTeam = "black";
-                SendWaitingTeamToArea();
+                
+                // Activate red and blue goals, deactivate black goals
+                activeGoals["red"] = true;
+                activeGoals["blue"] = true;
+                activeGoals["black1"] = false;
+                activeGoals["black2"] = false;
+                
                 PrintToChat($"ROTATION MATCH #{matchNumber}: {teamConfigs[team1Playing].Tag} vs {teamConfigs[team2Playing].Tag}");
-                PrintToChat($"Waiting: {teamConfigs[waitingTeam].Tag}");
+                PrintToChat($"Next Team: {teamConfigs[waitingTeam].Tag}");
             }
             else
             {
+                // In 3-way mode, activate all original goals
+                activeGoals["red"] = true;
+                activeGoals["blue"] = true;
+                activeGoals["black1"] = false;
+                activeGoals["black2"] = false;
                 PrintToChat("MATCH STARTED! 3 Teams Battle!");
             }
             
@@ -318,11 +353,11 @@ namespace Oxide.Plugins
             }
         }
 
-        [ChatCommand("set_red")] private void CmdSetRed(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ redGoalPos=p.transform.position; redGoalRot=p.transform.rotation; SendReply(p, "Red Set."); DrawGoal(p, redGoalPos, redGoalRot, Color.red, 5f); }}
-        [ChatCommand("set_blue")] private void CmdSetBlue(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blueGoalPos=p.transform.position; blueGoalRot=p.transform.rotation; SendReply(p, "Blue Set."); DrawGoal(p, blueGoalPos, blueGoalRot, Color.blue, 5f); }}
-        [ChatCommand("set_black")] private void CmdSetBlack(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos=p.transform.position; blackGoalRot=p.transform.rotation; SendReply(p, "Black Set."); DrawGoal(p, blackGoalPos, blackGoalRot, Color.black, 5f); }}
+        [ChatCommand("set_red")] private void CmdSetRed(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ redGoalPos=p.transform.position; redGoalRot=p.transform.rotation; SendReply(p, "Red Goal Set."); DrawGoal(p, redGoalPos, redGoalRot, Color.red, 5f); }}
+        [ChatCommand("set_blue")] private void CmdSetBlue(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blueGoalPos=p.transform.position; blueGoalRot=p.transform.rotation; SendReply(p, "Blue Goal Set."); DrawGoal(p, blueGoalPos, blueGoalRot, Color.blue, 5f); }}
+        [ChatCommand("set_black1")] private void CmdSetBlack1(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos1=p.transform.position; blackGoalRot1=p.transform.rotation; SendReply(p, "Black Goal 1 Set (at Red position)."); DrawGoal(p, blackGoalPos1, blackGoalRot1, Color.black, 5f); }}
+        [ChatCommand("set_black2")] private void CmdSetBlack2(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos2=p.transform.position; blackGoalRot2=p.transform.rotation; SendReply(p, "Black Goal 2 Set (at Blue position)."); DrawGoal(p, blackGoalPos2, blackGoalRot2, Color.black, 5f); }}
         [ChatCommand("set_center")] private void CmdSetCenter(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ centerPos=p.transform.position; SendReply(p, "Center Set."); }}
-        [ChatCommand("set_waiting")] private void CmdSetWaiting(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ waitingAreaPos=p.transform.position; SendReply(p, "Waiting Area Set."); }}
         [ChatCommand("reset_ball")] private void CmdResetBall(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ SpawnBall(); SendReply(p, "Ball Reset."); }}
         
         [ChatCommand("rotation")]
@@ -342,11 +377,28 @@ namespace Oxide.Plugins
             
             if (debugActive)
             {
-                SendReply(player, "Debug ON.");
+                SendReply(player, "Debug ON - Showing all goals.");
                 debugTimer = timer.Repeat(1.0f, 0, () => {
-                    if (redGoalPos != Vector3.zero) DrawGoal(player, redGoalPos, redGoalRot, Color.red, 1.0f);
-                    if (blueGoalPos != Vector3.zero) DrawGoal(player, blueGoalPos, blueGoalRot, Color.blue, 1.0f);
-                    if (blackGoalPos != Vector3.zero) DrawGoal(player, blackGoalPos, blackGoalRot, Color.black, 1.0f);
+                    if (redGoalPos != Vector3.zero) 
+                    {
+                        Color col = activeGoals["red"] ? Color.red : new Color(0.5f, 0, 0, 0.3f);
+                        DrawGoal(player, redGoalPos, redGoalRot, col, 1.0f);
+                    }
+                    if (blueGoalPos != Vector3.zero) 
+                    {
+                        Color col = activeGoals["blue"] ? Color.blue : new Color(0, 0, 0.5f, 0.3f);
+                        DrawGoal(player, blueGoalPos, blueGoalRot, col, 1.0f);
+                    }
+                    if (blackGoalPos1 != Vector3.zero) 
+                    {
+                        Color col = activeGoals["black1"] ? Color.black : new Color(0.2f, 0.2f, 0.2f, 0.3f);
+                        DrawGoal(player, blackGoalPos1, blackGoalRot1, col, 1.0f);
+                    }
+                    if (blackGoalPos2 != Vector3.zero) 
+                    {
+                        Color col = activeGoals["black2"] ? Color.black : new Color(0.2f, 0.2f, 0.2f, 0.3f);
+                        DrawGoal(player, blackGoalPos2, blackGoalRot2, col, 1.0f);
+                    }
                 });
             }
             else SendReply(player, "Debug OFF.");
@@ -838,11 +890,12 @@ namespace Oxide.Plugins
             
             // Determine which goal was scored in and award point to the kicking team
             string scoringTeam = null;
-            Vector3 goalScoredIn = Vector3.zero;
+            string goalType = null;
             
-            if (IsInside(activeBall.transform.position, blueGoalPos, blueGoalRot))
+            // Check blue goal (if active)
+            if (activeGoals["blue"] && IsInside(activeBall.transform.position, blueGoalPos, blueGoalRot))
             {
-                goalScoredIn = blueGoalPos;
+                goalType = "blue";
                 // Ball went into blue's goal - determine who kicked it
                 if (lastKicker != null)
                 {
@@ -850,9 +903,10 @@ namespace Oxide.Plugins
                     else if (blackTeam.Contains(lastKicker.userID)) scoringTeam = "BLACK";
                 }
             }
-            else if (IsInside(activeBall.transform.position, redGoalPos, redGoalRot))
+            // Check red goal (if active)
+            else if (activeGoals["red"] && IsInside(activeBall.transform.position, redGoalPos, redGoalRot))
             {
-                goalScoredIn = redGoalPos;
+                goalType = "red";
                 // Ball went into red's goal - determine who kicked it
                 if (lastKicker != null)
                 {
@@ -860,14 +914,26 @@ namespace Oxide.Plugins
                     else if (blackTeam.Contains(lastKicker.userID)) scoringTeam = "BLACK";
                 }
             }
-            else if (IsInside(activeBall.transform.position, blackGoalPos, blackGoalRot))
+            // Check black goal 1 (if active)
+            else if (activeGoals["black1"] && IsInside(activeBall.transform.position, blackGoalPos1, blackGoalRot1))
             {
-                goalScoredIn = blackGoalPos;
-                // Ball went into black's goal - determine who kicked it
+                goalType = "black1";
+                // Ball went into black1's goal - determine who kicked it
                 if (lastKicker != null)
                 {
-                    if (redTeam.Contains(lastKicker.userID)) scoringTeam = "RED";
-                    else if (blueTeam.Contains(lastKicker.userID)) scoringTeam = "BLUE";
+                    if (blueTeam.Contains(lastKicker.userID)) scoringTeam = "BLUE";
+                    else if (redTeam.Contains(lastKicker.userID)) scoringTeam = "RED";
+                }
+            }
+            // Check black goal 2 (if active)
+            else if (activeGoals["black2"] && IsInside(activeBall.transform.position, blackGoalPos2, blackGoalRot2))
+            {
+                goalType = "black2";
+                // Ball went into black2's goal - determine who kicked it
+                if (lastKicker != null)
+                {
+                    if (blueTeam.Contains(lastKicker.userID)) scoringTeam = "BLUE";
+                    else if (redTeam.Contains(lastKicker.userID)) scoringTeam = "RED";
                 }
             }
             
@@ -989,12 +1055,42 @@ namespace Oxide.Plugins
             // Reset scores for new match
             scoreRed = 0; scoreBlue = 0; scoreBlack = 0;
             
-            SendWaitingTeamToArea();
+            // GOAL SWAPPING LOGIC
+            // Deactivate loser's goal and activate black goal at that position
+            if (loser == "red")
+            {
+                activeGoals["red"] = false;
+                activeGoals["black1"] = true;  // Black goal at red position
+                PrintToChat($"Black team taking over RED goal position!");
+            }
+            else if (loser == "blue")
+            {
+                activeGoals["blue"] = false;
+                activeGoals["black2"] = true;  // Black goal at blue position
+                PrintToChat($"Black team taking over BLUE goal position!");
+            }
+            else if (loser == "black")
+            {
+                // Black is leaving, need to determine which black goal to deactivate
+                // and activate the original team goal
+                if (!activeGoals["black1"]) // Black was using black2
+                {
+                    activeGoals["black2"] = false;
+                    activeGoals["blue"] = true;
+                    PrintToChat($"Blue team reclaiming their goal!");
+                }
+                else // Black was using black1
+                {
+                    activeGoals["black1"] = false;
+                    activeGoals["red"] = true;
+                    PrintToChat($"Red team reclaiming their goal!");
+                }
+            }
             
             PrintToChat("═══════════════════════════════════");
             PrintToChat($"ROTATION MATCH #{matchNumber}");
             PrintToChat($"{teamConfigs[team1Playing].Tag} vs {teamConfigs[team2Playing].Tag}");
-            PrintToChat($"Waiting: {teamConfigs[waitingTeam].Tag}");
+            PrintToChat($"Next Team: {teamConfigs[waitingTeam].Tag}");
             PrintToChat("═══════════════════════════════════");
             
             // Start new match after delay
@@ -1005,35 +1101,6 @@ namespace Oxide.Plugins
             });
         }
         
-        private void SendWaitingTeamToArea()
-        {
-            if (waitingAreaPos == Vector3.zero)
-            {
-                Puts("WARNING: Waiting area not set. Use /set_waiting to configure.");
-                PrintToChat("WARNING: Waiting area not configured!");
-                return;
-            }
-            
-            List<ulong> waitingList = GetTeamList(waitingTeam);
-            foreach (var playerId in waitingList)
-            {
-                var player = BasePlayer.FindByID(playerId);
-                if (player != null && player.IsConnected)
-                {
-                    player.Teleport(waitingAreaPos);
-                    player.ShowToast(GameTip.Styles.Blue_Normal, $"Your team is WAITING. Next match incoming!");
-                }
-            }
-        }
-        
-        private List<ulong> GetTeamList(string team)
-        {
-            if (team == "red") return redTeam;
-            if (team == "blue") return blueTeam;
-            if (team == "black") return blackTeam;
-            return new List<ulong>();
-        }
-
         private void DrawGoal(BasePlayer player, Vector3 c, Quaternion r, Color col, float dur)
         {
             float hw=GoalWidth/2, hh=GoalHeight/2, hd=GoalDepth/2;
