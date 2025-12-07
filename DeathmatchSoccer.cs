@@ -1495,8 +1495,8 @@ namespace Oxide.Plugins
                 if (firework != null)
                 {
                     firework.Spawn();
-                    // Try to ignite if it's a firework - use SendMessage to avoid type dependency
-                    firework.SendMessage("Ignite");
+                    // Try to ignite if it's a firework - pass null as BasePlayer parameter
+                    firework.SendMessage("Ignite", null, SendMessageOptions.DontRequireReceiver);
                     // Auto-cleanup after 15 seconds
                     timer.Once(15f, () =>
                     {
@@ -1543,8 +1543,8 @@ namespace Oxide.Plugins
                 if (mortar != null)
                 {
                     mortar.Spawn();
-                    // Try to ignite the mortar - use SendMessage to avoid type dependency
-                    mortar.SendMessage("Ignite");
+                    // Try to ignite the mortar - pass null as BasePlayer parameter
+                    mortar.SendMessage("Ignite", null, SendMessageOptions.DontRequireReceiver);
                     // Auto-cleanup after 10 seconds
                     timer.Once(10f, () =>
                     {
@@ -1556,22 +1556,7 @@ namespace Oxide.Plugins
                 }
             }
             
-            // Spawn flamethrower effect
-            BaseEntity flamethrower = GameManager.server.CreateEntity("assets/prefabs/weapons/militaryflamethrower/effects/flamethrower_military_fire.prefab", position);
-            if (flamethrower != null)
-            {
-                flamethrower.Spawn();
-                // Kill after 1 second
-                timer.Once(1f, () =>
-                {
-                    if (flamethrower != null && !flamethrower.IsDestroyed)
-                    {
-                        flamethrower.Kill();
-                    }
-                });
-            }
-            
-            // Spawn confetti cannon
+            // Spawn confetti cannon entity (not the blast effect)
             BaseEntity confetti = GameManager.server.CreateEntity("assets/prefabs/misc/confetticannon/confetticannon.prefab", position);
             if (confetti != null)
             {
