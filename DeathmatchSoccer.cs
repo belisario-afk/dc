@@ -154,6 +154,7 @@ namespace Oxide.Plugins
         // LOBBY SYSTEM
         private bool lobbyActive = true;
         private Vector3 lobbySpawnPos = Vector3.zero;
+        private Vector3 loserSpawnPos = Vector3.zero;  // Spawn point for losing team after match
         private Timer lobbyTimer;
         private Timer lobbyReminderTimer;
         private int lobbyCountdown = 0;
@@ -219,6 +220,8 @@ namespace Oxide.Plugins
             public float Bl1qx, Bl1qy, Bl1qz, Bl1qw; // Black1 Rot
             public float Bl2qx, Bl2qy, Bl2qz, Bl2qw; // Black2 Rot
             public float Gw, Gh, Gd; // Dimensions
+            public float Lbx, Lby, Lbz; // Lobby spawn position
+            public float Lsx, Lsy, Lsz; // Loser spawn position
         }
 
         private void SaveArenaData()
@@ -234,7 +237,9 @@ namespace Oxide.Plugins
                 Bqx = blueGoalRot.x, Bqy = blueGoalRot.y, Bqz = blueGoalRot.z, Bqw = blueGoalRot.w,
                 Bl1qx = blackGoalRot1.x, Bl1qy = blackGoalRot1.y, Bl1qz = blackGoalRot1.z, Bl1qw = blackGoalRot1.w,
                 Bl2qx = blackGoalRot2.x, Bl2qy = blackGoalRot2.y, Bl2qz = blackGoalRot2.z, Bl2qw = blackGoalRot2.w,
-                Gw = GoalWidth, Gh = GoalHeight, Gd = GoalDepth
+                Gw = GoalWidth, Gh = GoalHeight, Gd = GoalDepth,
+                Lbx = lobbySpawnPos.x, Lby = lobbySpawnPos.y, Lbz = lobbySpawnPos.z,
+                Lsx = loserSpawnPos.x, Lsy = loserSpawnPos.y, Lsz = loserSpawnPos.z
             };
             Interface.Oxide.DataFileSystem.WriteObject(DataFileName, data);
         }
@@ -256,6 +261,11 @@ namespace Oxide.Plugins
                     blackGoalRot1 = new Quaternion(data.Bl1qx, data.Bl1qy, data.Bl1qz, data.Bl1qw);
                     blackGoalRot2 = new Quaternion(data.Bl2qx, data.Bl2qy, data.Bl2qz, data.Bl2qw);
                     if (data.Gw > 0) { GoalWidth = data.Gw; GoalHeight = data.Gh; GoalDepth = data.Gd; }
+                    
+                    // Load spawn positions
+                    lobbySpawnPos = new Vector3(data.Lbx, data.Lby, data.Lbz);
+                    loserSpawnPos = new Vector3(data.Lsx, data.Lsy, data.Lsz);
+                    
                     Puts("Arena Data Loaded.");
                 }
             }
@@ -417,6 +427,28 @@ namespace Oxide.Plugins
             SendReply(p, $"✓ Lobby spawn point set at {lobbySpawnPos}! Players will teleport here during lobby.");
             Puts($"Lobby spawn set to: {lobbySpawnPos}");
         }
+        
+        [ChatCommand("set_loser_spawn")]
+        private void CmdSetLoserSpawn(BasePlayer p, string c, string[] a)
+        {
+            if(!p.IsAdmin) return;
+            
+            // Get position slightly above ground to prevent spawning in air
+            RaycastHit hit;
+            if (Physics.Raycast(p.transform.position + Vector3.up, Vector3.down, out hit, 10f, LayerMask.GetMask("Terrain", "World", "Construction")))
+            {
+                loserSpawnPos = hit.point + new Vector3(0, 0.5f, 0); // Slightly above ground
+            }
+            else
+            {
+                loserSpawnPos = p.transform.position;
+            }
+            
+            SaveArenaData();
+            SendReply(p, $"✓ Loser spawn point set at {loserSpawnPos}! Losing team will teleport here after match.");
+            Puts($"Loser spawn set to: {loserSpawnPos}");
+        }
+        
         [ChatCommand("reset_ball")] private void CmdResetBall(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ SpawnBall(); SendReply(p, "Ball Reset."); }}
         
         [ChatCommand("rotation")]
@@ -1049,7 +1081,7 @@ namespace Oxide.Plugins
         }
 
         // Track barricades for auto-destroy
-        private Dictionary<uint, Timer> barricadeTimers = new Dictionary<uint, Timer>();
+        private Dictionary<NetworkableId, Timer> barricadeTimers = new Dictionary<NetworkableId, Timer>();
         
         void OnEntityBuilt(Planner plan, GameObject go, BasePlayer player)
         {
@@ -1094,6 +1126,54 @@ namespace Oxide.Plugins
                 barricadeTimers[entity.net.ID]?.Destroy();
                 barricadeTimers.Remove(entity.net.ID);
             }
+        }
+        
+        // Handle player death - delete corpse
+        void OnEntityDeath(BaseCombatEntity entity, HitInfo info)
+        {
+            if (entity == null) return;
+            
+            // Check if it's a player
+            if (entity is BasePlayer)
+            {
+                BasePlayer player = entity as BasePlayer;
+                if (player != null)
+                {
+                    Puts($"[Corpse] Player {player.displayName} died, will delete corpse");
+                    
+                    // Find and delete corpse on next frame
+                    NextTick(() =>
+                    {
+                        var corpses = UnityEngine.Object.FindObjectsOfType<PlayerCorpse>();
+                        foreach (var corpse in corpses)
+                        {
+                            if (corpse.playerSteamID == player.userID)
+                            {
+                                Puts($"[Corpse] Deleting corpse for {player.displayName}");
+                                corpse.Kill(BaseNetworkable.DestroyMode.None);
+                            }
+                        }
+                    });
+                }
+            }
+        }
+        
+        // Backup corpse deletion on populate
+        void OnCorpsePopulate(PlayerCorpse corpse, BasePlayer player)
+        {
+            if (corpse == null || player == null) return;
+            
+            Puts($"[Corpse] Corpse created for {player.displayName}, deleting immediately");
+            
+            // Delete corpse after brief delay
+            timer.Once(0.1f, () =>
+            {
+                if (corpse != null && !corpse.IsDestroyed)
+                {
+                    corpse.Kill(BaseNetworkable.DestroyMode.None);
+                    Puts($"[Corpse] Deleted corpse for {player.displayName}");
+                }
+            });
         }
 
         private void SpawnBall()
@@ -1595,6 +1675,41 @@ namespace Oxide.Plugins
                     Puts($"Teleported {player.displayName} to lobby at {lobbySpawnPos}");
                 }
             });
+        }
+        
+        private void TeleportLoserTeam(string losingTeam)
+        {
+            if (loserSpawnPos == Vector3.zero)
+            {
+                Puts("Loser spawn not set - skipping loser team teleport");
+                return;
+            }
+            
+            List<ulong> loserPlayers = null;
+            if (losingTeam == "red") loserPlayers = redTeam;
+            else if (losingTeam == "blue") loserPlayers = blueTeam;
+            else if (losingTeam == "black") loserPlayers = blackTeam;
+            
+            if (loserPlayers == null) return;
+            
+            foreach (var playerId in loserPlayers)
+            {
+                BasePlayer player = BasePlayer.FindByID(playerId);
+                if (player != null && player.IsConnected)
+                {
+                    NextTick(() =>
+                    {
+                        if (player != null && player.IsConnected)
+                        {
+                            if (player.IsSleeping()) player.EndSleeping();
+                            player.MovePosition(loserSpawnPos);
+                            player.ClientRPCPlayer(null, player, "ForcePositionTo", loserSpawnPos);
+                            player.SendNetworkUpdateImmediate();
+                            Puts($"Teleported losing player {player.displayName} to loser spawn");
+                        }
+                    });
+                }
+            }
         }
         
         private void TeleportAllToLobby()
