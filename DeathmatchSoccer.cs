@@ -147,6 +147,7 @@ namespace Oxide.Plugins
         private float sphereRadius = 3.0f;
         private Dictionary<ulong, float> lastSphereInteraction = new Dictionary<ulong, float>();
         private Timer lobbyTimer;
+        private Timer sphereMonitorTimer;
         private int lobbyCountdown = 0;
         
         // CELEBRATION SYSTEM
@@ -1355,13 +1356,26 @@ namespace Oxide.Plugins
         private void AutoStartMatch()
         {
             lobbyActive = false;
-            if (lobbyTimer != null) lobbyTimer.Destroy();
+            
+            // Stop lobby countdown timer
+            if (lobbyTimer != null && !lobbyTimer.Destroyed)
+            {
+                lobbyTimer.Destroy();
+            }
+            
+            // Stop sphere monitoring timer
+            if (sphereMonitorTimer != null && !sphereMonitorTimer.Destroyed)
+            {
+                sphereMonitorTimer.Destroy();
+            }
             
             // Remove lobby sphere when match starts
             if (lobbySphereEntity != null && !lobbySphereEntity.IsDestroyed)
             {
                 lobbySphereEntity.Kill();
             }
+            
+            Puts("Match starting - lobby ended");
             
             // Reset for new tournament
             scoreRed = 0; scoreBlue = 0; scoreBlack = 0;
@@ -1405,13 +1419,14 @@ namespace Oxide.Plugins
         // ==========================================
         private void MonitorLobbySpheresStart()
         {
-            if (lobbyTimer != null && lobbyTimer.Destroyed == false)
+            // Stop existing timer
+            if (sphereMonitorTimer != null && !sphereMonitorTimer.Destroyed)
             {
-                // Already running
-                return;
+                sphereMonitorTimer.Destroy();
             }
             
-            timer.Repeat(0.5f, 0, () => {
+            // Start new monitoring timer
+            sphereMonitorTimer = timer.Repeat(0.5f, 0, () => {
                 if (!lobbyActive) return;
                 
                 foreach (var player in BasePlayer.activePlayerList)
@@ -1422,22 +1437,35 @@ namespace Oxide.Plugins
                     CheckSphereProximity(player, lobbySpherePos);
                 }
             });
+            
+            Puts("Lobby sphere monitoring started");
         }
         
         private void CheckSphereProximity(BasePlayer player, Vector3 spherePos)
         {
-            if (spherePos == Vector3.zero) return;
+            if (spherePos == Vector3.zero)
+            {
+                Puts("Sphere position is zero - run /set_lobby_sphere first!");
+                return;
+            }
             
             float distance = Vector3.Distance(player.transform.position, spherePos);
             
             if (distance <= sphereRadius)
             {
+                Puts($"Player {player.displayName} in sphere range (distance: {distance:F1}m)");
+                
                 // Player is in sphere range
                 if (!lastSphereInteraction.ContainsKey(player.userID) || 
                     UnityEngine.Time.time - lastSphereInteraction[player.userID] > 3f)
                 {
                     lastSphereInteraction[player.userID] = UnityEngine.Time.time;
+                    Puts($"Triggering UI for {player.displayName}");
                     OnPlayerEnterSphere(player);
+                }
+                else
+                {
+                    Puts($"Player {player.displayName} on cooldown");
                 }
             }
         }
