@@ -1535,7 +1535,7 @@ namespace Oxide.Plugins
                         Puts($"[KillFeed] Death cause: {majorDamageType}");
                         
                         // Fall damage
-                        if (majorDamageType == DamageType.Fall)
+                        if (majorDamageType == Rust.DamageType.Fall)
                         {
                             Puts($"[KillFeed] This is a fall damage death");
                             AddKillToFeed(null, player, "Fall");
