@@ -787,21 +787,43 @@ namespace Oxide.Plugins
                 // Rotation Mode: Show only playing teams + waiting indicator
                 container.Add(new CuiLabel { Text = { Text = $"MATCH #{matchNumber}", FontSize = 10, Align = TextAnchor.UpperCenter, Color = "1 1 0 0.8" }, RectTransform = { AnchorMin = "0 0.85", AnchorMax = "1 1" } }, "SoccerScoreboard");
                 
-                var team1Config = teamConfigs[team1Playing];
-                var team2Config = teamConfigs[team2Playing];
-                int score1 = GetTeamScore(team1Playing);
-                int score2 = GetTeamScore(team2Playing);
+                // Determine left and right teams based on consistent positioning
+                string leftTeam, rightTeam;
                 
-                // Team 1 (Left)
-                container.Add(new CuiLabel { Text = { Text = team1Config.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = team1Config.Color + " 0.8" }, RectTransform = { AnchorMin = "0.1 0.5", AnchorMax = "0.4 0.8" } }, "SoccerScoreboard");
-                container.Add(new CuiLabel { Text = { Text = score1.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = team1Config.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.1 0.0", AnchorMax = "0.4 0.5" } }, "SoccerScoreboard");
+                // Red vs Blue: Blue left, Red right
+                if ((team1Playing == "blue" && team2Playing == "red") || (team1Playing == "red" && team2Playing == "blue"))
+                {
+                    leftTeam = "blue";
+                    rightTeam = "red";
+                }
+                // Black vs Red: Black left, Red right
+                else if ((team1Playing == "black" && team2Playing == "red") || (team1Playing == "red" && team2Playing == "black"))
+                {
+                    leftTeam = "black";
+                    rightTeam = "red";
+                }
+                // Blue vs Black: Blue left, Black right
+                else
+                {
+                    leftTeam = "blue";
+                    rightTeam = "black";
+                }
+                
+                var leftConfig = teamConfigs[leftTeam];
+                var rightConfig = teamConfigs[rightTeam];
+                int leftScore = GetTeamScore(leftTeam);
+                int rightScore = GetTeamScore(rightTeam);
+                
+                // Left Team
+                container.Add(new CuiLabel { Text = { Text = leftConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = leftConfig.Color + " 0.8" }, RectTransform = { AnchorMin = "0.1 0.5", AnchorMax = "0.4 0.8" } }, "SoccerScoreboard");
+                container.Add(new CuiLabel { Text = { Text = leftScore.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = leftConfig.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.1 0.0", AnchorMax = "0.4 0.5" } }, "SoccerScoreboard");
                 
                 // VS
                 container.Add(new CuiLabel { Text = { Text = "VS", FontSize = 14, Align = TextAnchor.MiddleCenter, Color = "1 1 1 0.6" }, RectTransform = { AnchorMin = "0.45 0.2", AnchorMax = "0.55 0.5" } }, "SoccerScoreboard");
                 
-                // Team 2 (Right)
-                container.Add(new CuiLabel { Text = { Text = team2Config.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = team2Config.Color + " 0.8" }, RectTransform = { AnchorMin = "0.6 0.5", AnchorMax = "0.9 0.8" } }, "SoccerScoreboard");
-                container.Add(new CuiLabel { Text = { Text = score2.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = team2Config.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.6 0.0", AnchorMax = "0.9 0.5" } }, "SoccerScoreboard");
+                // Right Team
+                container.Add(new CuiLabel { Text = { Text = rightConfig.Tag, FontSize = 10, Align = TextAnchor.UpperCenter, Color = rightConfig.Color + " 0.8" }, RectTransform = { AnchorMin = "0.6 0.5", AnchorMax = "0.9 0.8" } }, "SoccerScoreboard");
+                container.Add(new CuiLabel { Text = { Text = rightScore.ToString(), FontSize = 28, Align = TextAnchor.MiddleCenter, Color = rightConfig.Color + " 1", Font = "robotocondensed-bold.ttf" }, RectTransform = { AnchorMin = "0.6 0.0", AnchorMax = "0.9 0.5" } }, "SoccerScoreboard");
                 
                 // Waiting team indicator
                 var waitingConfig = teamConfigs[waitingTeam];
@@ -1014,13 +1036,17 @@ namespace Oxide.Plugins
             if (entity == null || player == null) return;
 
             // Auto-destroy barricades after 7 seconds
-            if (entity.ShortPrefabName == "barricade.wood.cover")
+            // Check multiple name variations for broader matching
+            if (entity.ShortPrefabName.Contains("barricade") || entity.PrefabName.Contains("barricade.wood"))
             {
+                Puts($"Barricade placed by {player.displayName}, will destroy in 7 seconds");
+                
                 timer.Once(7f, () =>
                 {
                     if (entity != null && !entity.IsDestroyed)
                     {
                         entity.Kill();
+                        Puts($"Barricade destroyed after 7 seconds");
                     }
                 });
             }
