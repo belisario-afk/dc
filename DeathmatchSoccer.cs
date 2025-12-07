@@ -31,7 +31,7 @@ namespace Oxide.Plugins
      * /set_red, /set_blue - Set red and blue goal positions
      * /set_black1, /set_black2 - Set black goals (at red and blue positions)
      * /set_center - Set ball spawn position
-     * /set_lobby_sphere - Set single lobby sphere position (spawns purple sphere entity)
+     * /set_lobby_spawn - Set lobby spawn point where players teleport during lobby
      * /save_goals, /load_goals - Persist arena data
      * /start_match - Begin the match
      * /rotation - Toggle rotation mode ON/OFF
@@ -42,7 +42,7 @@ namespace Oxide.Plugins
      * PLAYER COMMANDS:
      * /join [team] - Join a team (shows UI if no team specified)
      * /teams - Show team selection UI
-     * Walk into lobby sphere - Triggers team selection UI
+     * Use /join command - Shows team selection UI (reminders appear during lobby)
      */
     [Info("DeathmatchSoccer", "KillaDome", "5.4.0")]
     [Description("3-Team Soccer with Lobby System and Celebrations")]
@@ -142,12 +142,9 @@ namespace Oxide.Plugins
         
         // LOBBY SYSTEM
         private bool lobbyActive = true;
-        private Vector3 lobbySpherePos = Vector3.zero;
-        private BaseEntity lobbySphereEntity = null;
-        private float sphereRadius = 3.0f;
-        private Dictionary<ulong, float> lastSphereInteraction = new Dictionary<ulong, float>();
+        private Vector3 lobbySpawnPos = Vector3.zero;
         private Timer lobbyTimer;
-        private Timer sphereMonitorTimer;
+        private Timer lobbyReminderTimer;
         private int lobbyCountdown = 0;
         
         // CELEBRATION SYSTEM
@@ -375,17 +372,14 @@ namespace Oxide.Plugins
         [ChatCommand("set_black1")] private void CmdSetBlack1(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos1=p.transform.position; blackGoalRot1=p.transform.rotation; SendReply(p, "Black Goal 1 Set (at Red position)."); DrawGoal(p, blackGoalPos1, blackGoalRot1, Color.black, 5f); }}
         [ChatCommand("set_black2")] private void CmdSetBlack2(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ blackGoalPos2=p.transform.position; blackGoalRot2=p.transform.rotation; SendReply(p, "Black Goal 2 Set (at Blue position)."); DrawGoal(p, blackGoalPos2, blackGoalRot2, Color.black, 5f); }}
         [ChatCommand("set_center")] private void CmdSetCenter(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ centerPos=p.transform.position; SendReply(p, "Center Set."); }}
-        [ChatCommand("set_lobby_sphere")] 
-        private void CmdSetLobbySphere(BasePlayer p, string c, string[] a) 
+        [ChatCommand("set_lobby_spawn")] 
+        private void CmdSetLobbySpawn(BasePlayer p, string c, string[] a) 
         { 
             if(!p.IsAdmin) return;
             
-            lobbySpherePos = p.transform.position;
-            SendReply(p, "Lobby Sphere Position Set.");
-            
-            // Spawn the purple sphere entity
-            SpawnLobbySphere();
-            SendReply(p, "Purple lobby sphere spawned. Players can walk into it to join teams.");
+            lobbySpawnPos = p.transform.position;
+            SaveData();
+            SendReply(p, "✓ Lobby spawn point set! Players will teleport here during lobby.");
         }
         [ChatCommand("reset_ball")] private void CmdResetBall(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ SpawnBall(); SendReply(p, "Ball Reset."); }}
         
@@ -575,23 +569,6 @@ namespace Oxide.Plugins
             AssignRole(player, arg.Args[0]);
         }
         
-        [ConsoleCommand("test_sphere_ui")]
-        private void CmdTestSphereUI(ConsoleSystem.Arg arg)
-        {
-            var player = arg.Player();
-            if (player == null) return;
-            
-            if (!player.IsAdmin)
-            {
-                player.ChatMessage("You must be an admin to use this command.");
-                return;
-            }
-            
-            Puts($"=== TEST COMMAND: Showing UI for {player.displayName} ===");
-            ShowTeamSelectUI(player);
-            player.ChatMessage("UI test triggered - check if UI appeared");
-        }
-
         private void AssignRole(BasePlayer player, string role)
         {
             playerRoles[player.userID] = role;
@@ -1333,15 +1310,9 @@ namespace Oxide.Plugins
             lobbyActive = true;
             lobbyCountdown = seconds;
             
-            // Spawn lobby sphere if position is set
-            if (lobbySpherePos != Vector3.zero)
-            {
-                SpawnLobbySphere();
-            }
-            
             PrintToChat("═══════════════════════════════════");
             PrintToChat($"LOBBY ACTIVE - Next match in {seconds} seconds");
-            PrintToChat("Walk into purple sphere or use /join command");
+            PrintToChat("⚽ Use /join to select your team! ⚽");
             PrintToChat("═══════════════════════════════════");
             
             if (lobbyTimer != null) lobbyTimer.Destroy();
@@ -1366,8 +1337,10 @@ namespace Oxide.Plugins
                 }
             });
             
-            // Start lobby monitoring
-            MonitorLobbySpheresStart();
+            // Start lobby reminders and teleport players
+            TeleportAllToLobby();
+            StartLobbyReminders();
+            PrintToChat("⚽ Use /join to select your team! ⚽");
         }
         
         private void AutoStartMatch()
@@ -1380,16 +1353,10 @@ namespace Oxide.Plugins
                 lobbyTimer.Destroy();
             }
             
-            // Stop sphere monitoring timer
-            if (sphereMonitorTimer != null && !sphereMonitorTimer.Destroyed)
+            // Stop lobby reminder timer
+            if (lobbyReminderTimer != null && !lobbyReminderTimer.Destroyed)
             {
-                sphereMonitorTimer.Destroy();
-            }
-            
-            // Remove lobby sphere when match starts
-            if (lobbySphereEntity != null && !lobbySphereEntity.IsDestroyed)
-            {
-                lobbySphereEntity.Kill();
+                lobbyReminderTimer.Destroy();
             }
             
             Puts("Match starting - lobby ended");
@@ -1432,167 +1399,63 @@ namespace Oxide.Plugins
         }
         
         // ==========================================
-        // LOBBY SYSTEM - SPHERE MONITORING
+        // LOBBY SYSTEM - JOIN REMINDERS
         // ==========================================
-        private void MonitorLobbySpheresStart()
+        private void StartLobbyReminders()
         {
-            PrintToChat("=== MONITORING FUNCTION CALLED ==="); // FIRST thing - verify function runs
-            Puts("=== MonitorLobbySpheresStart CALLED ===");
-            PrintToChat("DEBUG: MonitorLobbySpheresStart called"); // Also show in chat
-            
-            // Stop existing timer
-            if (sphereMonitorTimer != null && !sphereMonitorTimer.Destroyed)
+            // Stop existing reminder timer
+            if (lobbyReminderTimer != null && !lobbyReminderTimer.Destroyed)
             {
-                sphereMonitorTimer.Destroy();
-                Puts("Destroyed existing sphere monitor timer");
+                lobbyReminderTimer.Destroy();
             }
             
-            Puts($"Creating sphere monitor timer (lobbyActive: {lobbyActive}, sphere pos: {lobbySpherePos})");
-            PrintToChat($"DEBUG: Timer created, lobbyActive: {lobbyActive}"); // Chat debug
-            
-            // Test immediate check before timer
-            Puts("=== IMMEDIATE CHECK BEFORE TIMER ===");
-            foreach (var player in BasePlayer.activePlayerList)
-            {
-                if (player == null || !player.IsConnected) continue;
-                float dist = Vector3.Distance(player.transform.position, lobbySpherePos);
-                Puts($"Player {player.displayName} distance from sphere: {dist:F1}m");
-                PrintToChat($"DEBUG: {player.displayName} is {dist:F1}m from sphere");
-            }
-            
-            // Start new monitoring timer
-            sphereMonitorTimer = timer.Repeat(0.5f, 0, () => {
-                Puts($"[Sphere Monitor Tick] lobbyActive: {lobbyActive}, players: {BasePlayer.activePlayerList.Count}");
-                PrintToChat($"[Tick] Active: {lobbyActive}, Players: {BasePlayer.activePlayerList.Count}"); // Chat visibility
+            // Start new reminder timer - every 10 seconds
+            lobbyReminderTimer = timer.Repeat(10f, 0, () => {
+                if (!lobbyActive) return;
                 
-                if (!lobbyActive)
-                {
-                    Puts("Skipping tick - lobbyActive is false");
-                    PrintToChat("Tick skipped - lobby not active");
-                    return;
-                }
+                PrintToChat("⚽ Use /join to select your team! ⚽");
                 
                 foreach (var player in BasePlayer.activePlayerList)
                 {
-                    if (player == null || !player.IsConnected) continue;
-                    
-                    // Check distance to lobby sphere
-                    CheckSphereProximity(player, lobbySpherePos);
+                    if (player != null && player.IsConnected)
+                    {
+                        player.ShowToast(GameTip.Styles.Blue_Normal, "⚽ Use /join to select your team! ⚽");
+                    }
                 }
             });
             
-            Puts("Lobby sphere monitoring timer started");
-            PrintToChat("DEBUG: Monitoring timer started"); // Chat confirmation
+            Puts("Lobby join reminders started");
         }
         
-        private void CheckSphereProximity(BasePlayer player, Vector3 spherePos)
+        private void TeleportToLobby(BasePlayer player)
         {
-            if (spherePos == Vector3.zero)
+            if (player == null || !player.IsConnected) return;
+            
+            if (lobbySpawnPos != Vector3.zero)
             {
-                Puts("Sphere position is zero - run /set_lobby_sphere first!");
+                player.Teleport(lobbySpawnPos);
+            }
+        }
+        
+        private void TeleportAllToLobby()
+        {
+            if (lobbySpawnPos == Vector3.zero)
+            {
+                Puts("Lobby spawn not set - players not teleported");
                 return;
             }
             
-            float distance = Vector3.Distance(player.transform.position, spherePos);
-            
-            if (distance <= sphereRadius)
+            foreach (var player in BasePlayer.activePlayerList)
             {
-                Puts($"Player {player.displayName} in sphere range (distance: {distance:F1}m)");
-                
-                // Player is in sphere range
-                if (!lastSphereInteraction.ContainsKey(player.userID) || 
-                    UnityEngine.Time.time - lastSphereInteraction[player.userID] > 3f)
+                if (player != null && player.IsConnected)
                 {
-                    lastSphereInteraction[player.userID] = UnityEngine.Time.time;
-                    Puts($"Triggering UI for {player.displayName}");
-                    OnPlayerEnterSphere(player);
-                }
-                else
-                {
-                    Puts($"Player {player.displayName} on cooldown");
+                    TeleportToLobby(player);
                 }
             }
+            
+            Puts($"Teleported all players to lobby spawn");
         }
         
-        private void OnPlayerEnterSphere(BasePlayer player)
-        {
-            Puts($"=== OnPlayerEnterSphere called for {player.displayName} ===");
-            
-            // Show team selection UI
-            Puts("Calling ShowTeamSelectUI...");
-            ShowTeamSelectUI(player);
-            Puts("ShowTeamSelectUI completed");
-            
-            // Show hint
-            player.ShowToast(GameTip.Styles.Blue_Normal, "Walk into sphere to join a team!");
-            Puts("Toast message sent");
-        }
-        
-        // DEBUG COMMANDS FOR SPHERE TROUBLESHOOTING
-        [ConsoleCommand("check_sphere")]
-        private void CheckSphereCommand(ConsoleSystem.Arg arg)
-        {
-            var player = arg.Player();
-            if (player == null || !player.IsAdmin)
-            {
-                if (player != null) player.ChatMessage("Admin only");
-                return;
-            }
-            
-            PrintToChat("=== MANUAL SPHERE CHECK ===");
-            foreach (var p in BasePlayer.activePlayerList)
-            {
-                if (p == null || !p.IsConnected) continue;
-                float dist = Vector3.Distance(p.transform.position, lobbySpherePos);
-                PrintToChat($"{p.displayName}: {dist:F1}m from sphere (radius: {sphereRadius}m)");
-                
-                if (dist <= sphereRadius)
-                {
-                    PrintToChat($"✓ Within range! Triggering UI...");
-                    ShowTeamSelectUI(p);
-                }
-            }
-        }
-        
-        [ConsoleCommand("sphere_info")]
-        private void SphereInfoCommand(ConsoleSystem.Arg arg)
-        {
-            var player = arg.Player();
-            if (player == null || !player.IsAdmin)
-            {
-                if (player != null) player.ChatMessage("Admin only");
-                return;
-            }
-            
-            PrintToChat("=== SPHERE DEBUG INFO ===");
-            PrintToChat($"Lobby Active: {lobbyActive}");
-            PrintToChat($"Sphere Position: {lobbySpherePos}");
-            PrintToChat($"Sphere Radius: {sphereRadius}m");
-            PrintToChat($"Monitor Timer Exists: {sphereMonitorTimer != null}");
-            PrintToChat($"Monitor Timer Destroyed: {sphereMonitorTimer != null && sphereMonitorTimer.Destroyed}");
-            PrintToChat($"Active Players: {BasePlayer.activePlayerList.Count}");
-        }
-        
-        private void SpawnLobbySphere()
-        {
-            // Remove old sphere if it exists
-            if (lobbySphereEntity != null && !lobbySphereEntity.IsDestroyed)
-            {
-                lobbySphereEntity.Kill();
-            }
-            
-            // Spawn purple sphere entity
-            lobbySphereEntity = GameManager.server.CreateEntity("assets/bundled/prefabs/modding/events/twitch/br_sphere_purple.prefab", lobbySpherePos);
-            if (lobbySphereEntity != null)
-            {
-                lobbySphereEntity.Spawn();
-                Puts("Lobby sphere spawned at " + lobbySpherePos);
-            }
-            else
-            {
-                Puts("Failed to spawn lobby sphere entity!");
-            }
-        }
         
         // ==========================================
         // CELEBRATION SYSTEM
