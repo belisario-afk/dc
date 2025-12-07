@@ -1076,7 +1076,17 @@ namespace Oxide.Plugins
                 else if (team == "BLACK") scoreBlack++;
             }
             
-            Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", activeBall.transform.position);
+            // Goal scoring effects
+            Vector3 goalPos = activeBall.transform.position;
+            Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", goalPos);
+            
+            // Flamethrower fire effect
+            Effect.server.Run("assets/prefabs/weapons/militaryflamethrower/effects/flamethrower_military_fire.prefab", goalPos);
+            
+            // Confetti cannon effects
+            Effect.server.Run("assets/prefabs/misc/confetticannon/effects/confetticannon_blast.prefab", goalPos);
+            timer.Once(0.2f, () => Effect.server.Run("assets/prefabs/misc/confetticannon/effects/confetti-cannon-deploy.prefab", goalPos));
+            
             RefreshScoreboardAll(); ShowGoalBanner(team);
             string mvp = (lastKicker != null) ? lastKicker.displayName : "None";
             tickerMessages.Add($"GOAL: {team} ({mvp})");
@@ -1433,10 +1443,13 @@ namespace Oxide.Plugins
             string winnerTag = teamConfigs[winner].Tag;
             var winnerColor = teamConfigs[winner].Color;
             
-            // Fireworks effect
+            // Team-colored fireworks effect
             timer.Repeat(0.5f, 10, () => {
-                LaunchFirework(centerPos + new Vector3(UnityEngine.Random.Range(-20f, 20f), 0, UnityEngine.Random.Range(-20f, 20f)));
+                LaunchFirework(centerPos + new Vector3(UnityEngine.Random.Range(-20f, 20f), 0, UnityEngine.Random.Range(-20f, 20f)), winner);
             });
+            
+            // Dancing laser lines from corners with team colors
+            StartDancingLasers(5f, winner);
             
             // Sky text celebration
             ShowSkyText(winnerTag + " WINS!", winnerColor, 5f);
@@ -1447,10 +1460,13 @@ namespace Oxide.Plugins
             string winnerTag = teamConfigs[winner].Tag;
             var winnerColor = teamConfigs[winner].Color;
             
-            // Big fireworks
+            // Big team-colored fireworks
             timer.Repeat(0.3f, 20, () => {
-                LaunchFirework(centerPos + new Vector3(UnityEngine.Random.Range(-30f, 30f), 0, UnityEngine.Random.Range(-30f, 30f)));
+                LaunchFirework(centerPos + new Vector3(UnityEngine.Random.Range(-30f, 30f), 0, UnityEngine.Random.Range(-30f, 30f)), winner);
             });
+            
+            // Epic dancing lasers - longer duration for tournament with team colors
+            StartDancingLasers(10f, winner);
             
             // Tournament champion text
             ShowSkyText("TOURNAMENT", "1 1 1", 3f, 40f);
@@ -1458,9 +1474,30 @@ namespace Oxide.Plugins
             timer.Once(6f, () => ShowSkyText(winnerTag, winnerColor, 5f, 45f));
         }
         
-        private void LaunchFirework(Vector3 position)
+        private void LaunchFirework(Vector3 position, string team)
         {
-            // Create firework effect at position
+            // Team-colored fireworks
+            string fireworkPrefab = "";
+            if (team == "BLUE")
+            {
+                fireworkPrefab = "assets/prefabs/deployable/fireworks/boomer.blue.item.prefab";
+            }
+            else if (team == "RED")
+            {
+                fireworkPrefab = "assets/prefabs/deployable/fireworks/boomer.red.item.prefab";
+            }
+            else if (team == "BLACK")
+            {
+                fireworkPrefab = "assets/prefabs/deployable/fireworks/boomer.violet.item.prefab";
+            }
+            
+            // Launch team-colored firework
+            if (!string.IsNullOrEmpty(fireworkPrefab))
+            {
+                Effect.server.Run(fireworkPrefab, position + new Vector3(0, 30f, 0));
+            }
+            
+            // Backup explosion effect
             Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", position + new Vector3(0, 30f, 0));
             
             // Add some sparkles
@@ -1498,6 +1535,82 @@ namespace Oxide.Plugins
                 player.SendConsoleCommand("ddraw.text", duration, glowColor, textPos + new Vector3(0.2f, -0.2f, 0), $"<size=50>{text}</size>");
                 player.SendConsoleCommand("ddraw.text", duration, glowColor, textPos + new Vector3(-0.2f, -0.2f, 0), $"<size=50>{text}</size>");
             }
+        }
+        
+        private void StartDancingLasers(float duration, string team)
+        {
+            // Define 4 corner positions around the arena (50m radius from center)
+            Vector3[] corners = new Vector3[4];
+            corners[0] = centerPos + new Vector3(-50f, 0, -50f);  // Bottom-left
+            corners[1] = centerPos + new Vector3(50f, 0, -50f);   // Bottom-right
+            corners[2] = centerPos + new Vector3(50f, 0, 50f);    // Top-right
+            corners[3] = centerPos + new Vector3(-50f, 0, 50f);   // Top-left
+            
+            // Get team color
+            string teamColorStr = teamConfigs[team].Color;
+            string[] rgb = teamColorStr.Split(' ');
+            Color teamColor = new Color(
+                float.Parse(rgb[0]),
+                float.Parse(rgb[1]),
+                float.Parse(rgb[2])
+            );
+            
+            // Create variations of team color for variety
+            Color[] colors = new Color[] {
+                teamColor,                                          // Main team color
+                new Color(teamColor.r * 1.2f, teamColor.g * 1.2f, teamColor.b * 1.2f),  // Brighter
+                new Color(teamColor.r * 0.8f, teamColor.g * 0.8f, teamColor.b * 0.8f),  // Darker
+                new Color(teamColor.r, teamColor.g * 1.3f, teamColor.b),                // Green tint
+                new Color(teamColor.r * 1.3f, teamColor.g, teamColor.b),                // Red tint
+                new Color(teamColor.r, teamColor.g, teamColor.b * 1.3f),                // Blue tint
+                new Color(1f, 1f, 1f),                             // White flash
+                new Color(teamColor.r * 1.5f, teamColor.g * 1.5f, teamColor.b * 1.5f)   // Super bright
+            };
+            
+            // Clamp all colors to valid range
+            for (int c = 0; c < colors.Length; c++)
+            {
+                colors[c].r = Mathf.Clamp01(colors[c].r);
+                colors[c].g = Mathf.Clamp01(colors[c].g);
+                colors[c].b = Mathf.Clamp01(colors[c].b);
+            }
+            
+            // Animate lasers over duration
+            float interval = 0.1f;
+            int totalSteps = (int)(duration / interval);
+            
+            timer.Repeat(interval, totalSteps, () => {
+                foreach (var player in BasePlayer.activePlayerList)
+                {
+                    if (player == null || !player.IsConnected) continue;
+                    
+                    // Each corner shoots lasers to center and other corners
+                    for (int i = 0; i < corners.Length; i++)
+                    {
+                        Vector3 cornerStart = corners[i] + new Vector3(0, 10f, 0); // Elevate start point
+                        
+                        // Random height variation for dancing effect
+                        float heightOffset = UnityEngine.Random.Range(-5f, 15f);
+                        Vector3 centerTarget = centerPos + new Vector3(0, 20f + heightOffset, 0);
+                        
+                        // Laser to center with team color variation
+                        Color laserColor = colors[UnityEngine.Random.Range(0, colors.Length)];
+                        player.SendConsoleCommand("ddraw.line", interval + 0.05f, laserColor, cornerStart, centerTarget);
+                        
+                        // Cross lasers to opposite corners
+                        int oppositeCorner = (i + 2) % 4;
+                        Vector3 oppositeStart = corners[oppositeCorner] + new Vector3(0, 10f, 0);
+                        Color crossColor = colors[UnityEngine.Random.Range(0, colors.Length)];
+                        player.SendConsoleCommand("ddraw.line", interval + 0.05f, crossColor, cornerStart, oppositeStart);
+                        
+                        // Rotating lasers to adjacent corners
+                        int nextCorner = (i + 1) % 4;
+                        Vector3 nextStart = corners[nextCorner] + new Vector3(0, 10f + UnityEngine.Random.Range(-3f, 3f), 0);
+                        Color adjacentColor = colors[UnityEngine.Random.Range(0, colors.Length)];
+                        player.SendConsoleCommand("ddraw.line", interval + 0.05f, adjacentColor, cornerStart, nextStart);
+                    }
+                }
+            });
         }
         
         private void DrawGoal(BasePlayer player, Vector3 c, Quaternion r, Color col, float dur)
