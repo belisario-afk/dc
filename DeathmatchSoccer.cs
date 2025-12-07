@@ -652,6 +652,10 @@ namespace Oxide.Plugins
                 player.SetMaxHealth(200); 
                 player.health = 200;
             }
+            
+            // Force inventory and player network updates so other players can see the items and skins
+            player.inventory.ServerUpdate(0f);
+            player.SendNetworkUpdateImmediate();
         }
         
         private void GiveItemWithSkin(BasePlayer player, string itemName, int amount, ulong skinId, ItemContainer container)
@@ -936,6 +940,7 @@ namespace Oxide.Plugins
                     player.health = player.MaxHealth();
                     if (player.IsSleeping()) player.EndSleeping();
                     GiveKit(player, role);
+                    player.SendNetworkUpdateImmediate(); // Update network state so other players can see
                 });
             }
         }
@@ -1434,6 +1439,7 @@ namespace Oxide.Plugins
             if (lobbySpawnPos != Vector3.zero)
             {
                 player.Teleport(lobbySpawnPos);
+                player.SendNetworkUpdateImmediate(); // Update network state so other players can see
             }
         }
         
