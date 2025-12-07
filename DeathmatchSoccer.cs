@@ -750,7 +750,7 @@ namespace Oxide.Plugins
                 KillerTeam = killerTeam,
                 VictimTeam = victimTeam,
                 Message = randomMessage,
-                Timestamp = Time.time
+                Timestamp = UnityEngine.Time.time
             };
             
             killFeed.Insert(0, entry);
@@ -799,7 +799,7 @@ namespace Oxide.Plugins
                 if (index >= MAX_KILL_FEED_ENTRIES) break;
                 
                 // Fade effect based on age
-                float age = Time.time - entry.Timestamp;
+                float age = UnityEngine.Time.time - entry.Timestamp;
                 float alpha = Mathf.Clamp(1f - (age / 10f), 0.3f, 1f);
                 
                 // Get team colors
