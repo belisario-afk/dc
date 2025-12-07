@@ -1,31 +1,41 @@
 # Celebration Upgrades - Future Enhancements
 
-## Currently Implemented (v5.4.0)
+## Currently Implemented (v5.5.0)
 
 ### Match Win Celebrations
-- ✅ Fireworks (10 explosions over 5 seconds)
-- ✅ Sky text with outer glow
-- ✅ Team-colored text
-- ✅ C4 explosion effects at 30m height
-- ✅ Sparkle particles
+- ✅ **Team-colored fireworks** (Blue/Red/Violet boomer prefabs)
+- ✅ **Dancing laser light show** (Team-colored lasers from 4 corners)
+- ✅ **Sky text with outer glow** (4-layer glow effect)
+- ✅ **C4 explosion effects** at 30m height
+- ✅ **Sparkle particles** (5 per firework)
+- ✅ Duration: 5 seconds
 
 ### Tournament Win Celebrations
-- ✅ Extended fireworks (20 explosions over 6 seconds)
-- ✅ Multi-stage text animation ("TOURNAMENT" → "CHAMPION" → Team Name)
-- ✅ Outer glow on all text
-- ✅ Variable text heights and sizes
+- ✅ **Extended team-colored fireworks** (20 explosions over 6 seconds)
+- ✅ **Epic dancing lasers** (10 seconds, team colors)
+- ✅ **Multi-stage text animation** ("TOURNAMENT" → "CHAMPION" → Team Name)
+- ✅ **Outer glow on all text** (4 layers)
+- ✅ **Variable text heights and sizes**
+
+### Goal Scoring Effects
+- ✅ **Flamethrower fire burst** at goal position
+- ✅ **Confetti cannon blast** (instant)
+- ✅ **Confetti deploy animation** (0.2s delay)
+- ✅ **C4 explosion** for impact
+
+### Dancing Laser System
+- ✅ **4 corner positions** (50m radius from center)
+- ✅ **Team-colored with 8 variations** (bright, dark, tinted, white flashes)
+- ✅ **3 laser types per corner:**
+  - Center lasers (with dancing height variation)
+  - Cross lasers (to opposite corners)
+  - Adjacent lasers (rotating pattern)
+- ✅ **Smooth animation** (0.1s update rate)
+- ✅ **All colors clamped** to valid range
 
 ## Planned Celebration Upgrades
 
 ### 🎆 Advanced Fireworks
-
-#### Colored Fireworks
-```csharp
-// Team-specific colored fireworks
-- Blue team: Blue sparkles + white burst
-- Red team: Red sparkles + orange burst
-- Black team: Purple sparkles + silver burst
-```
 
 #### Firework Patterns
 - **Fountain:** Upward spray of particles
