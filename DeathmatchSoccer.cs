@@ -1437,6 +1437,7 @@ namespace Oxide.Plugins
         private void MonitorLobbySpheresStart()
         {
             Puts("=== MonitorLobbySpheresStart CALLED ===");
+            PrintToChat("DEBUG: MonitorLobbySpheresStart called"); // Also show in chat
             
             // Stop existing timer
             if (sphereMonitorTimer != null && !sphereMonitorTimer.Destroyed)
@@ -1446,12 +1447,27 @@ namespace Oxide.Plugins
             }
             
             Puts($"Creating sphere monitor timer (lobbyActive: {lobbyActive}, sphere pos: {lobbySpherePos})");
+            PrintToChat($"DEBUG: Timer created, lobbyActive: {lobbyActive}"); // Chat debug
+            
+            // Test immediate check before timer
+            Puts("=== IMMEDIATE CHECK BEFORE TIMER ===");
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                if (player == null || !player.IsConnected) continue;
+                float dist = Vector3.Distance(player.transform.position, lobbySpherePos);
+                Puts($"Player {player.displayName} distance from sphere: {dist:F1}m");
+                PrintToChat($"DEBUG: {player.displayName} is {dist:F1}m from sphere");
+            }
             
             // Start new monitoring timer
             sphereMonitorTimer = timer.Repeat(0.5f, 0, () => {
                 Puts($"[Sphere Monitor Tick] lobbyActive: {lobbyActive}, players: {BasePlayer.activePlayerList.Count}");
                 
-                if (!lobbyActive) return;
+                if (!lobbyActive)
+                {
+                    Puts("Skipping tick - lobbyActive is false");
+                    return;
+                }
                 
                 foreach (var player in BasePlayer.activePlayerList)
                 {
@@ -1463,6 +1479,7 @@ namespace Oxide.Plugins
             });
             
             Puts("Lobby sphere monitoring timer started");
+            PrintToChat("DEBUG: Monitoring timer started"); // Chat confirmation
         }
         
         private void CheckSphereProximity(BasePlayer player, Vector3 spherePos)
