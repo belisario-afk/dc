@@ -290,6 +290,13 @@ namespace Oxide.Plugins
             if (hudTimer != null) hudTimer.Destroy();
             if (debugTimer != null) debugTimer.Destroy();
             
+            // Cleanup barricade timers
+            foreach (var timer in barricadeTimers.Values)
+            {
+                timer?.Destroy();
+            }
+            barricadeTimers.Clear();
+            
             foreach (var player in BasePlayer.activePlayerList)
             {
                 CuiHelper.DestroyUi(player, "SoccerScoreboard");
@@ -395,9 +402,20 @@ namespace Oxide.Plugins
         { 
             if(!p.IsAdmin) return;
             
-            lobbySpawnPos = p.transform.position;
+            // Get position slightly above ground to prevent spawning in air
+            RaycastHit hit;
+            if (Physics.Raycast(p.transform.position + Vector3.up, Vector3.down, out hit, 10f, LayerMask.GetMask("Terrain", "World", "Construction")))
+            {
+                lobbySpawnPos = hit.point + new Vector3(0, 0.5f, 0); // Slightly above ground
+            }
+            else
+            {
+                lobbySpawnPos = p.transform.position;
+            }
+            
             SaveArenaData();
-            SendReply(p, "✓ Lobby spawn point set! Players will teleport here during lobby.");
+            SendReply(p, $"✓ Lobby spawn point set at {lobbySpawnPos}! Players will teleport here during lobby.");
+            Puts($"Lobby spawn set to: {lobbySpawnPos}");
         }
         [ChatCommand("reset_ball")] private void CmdResetBall(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ SpawnBall(); SendReply(p, "Ball Reset."); }}
         
@@ -1030,25 +1048,51 @@ namespace Oxide.Plugins
             }
         }
 
+        // Track barricades for auto-destroy
+        private Dictionary<uint, Timer> barricadeTimers = new Dictionary<uint, Timer>();
+        
         void OnEntityBuilt(Planner plan, GameObject go, BasePlayer player)
         {
             BaseEntity entity = go.ToBaseEntity();
             if (entity == null || player == null) return;
 
             // Auto-destroy barricades after 7 seconds
-            // Check multiple name variations for broader matching
-            if (entity.ShortPrefabName.Contains("barricade") || entity.PrefabName.Contains("barricade.wood"))
+            string shortName = entity.ShortPrefabName ?? "";
+            string fullName = entity.PrefabName ?? "";
+            
+            // Check if it's a barricade
+            if (shortName.Contains("barricade") || fullName.Contains("barricade.wood") || shortName == "barricade.wood.cover")
             {
-                Puts($"Barricade placed by {player.displayName}, will destroy in 7 seconds");
+                Puts($"[Barricade] Placed by {player.displayName} (ID: {entity.net.ID}), will destroy in 7 seconds");
+                SendReply(player, "⚠ Barricade will auto-destroy in 7 seconds!");
                 
-                timer.Once(7f, () =>
+                // Store timer reference
+                var destroyTimer = timer.Once(7f, () =>
                 {
                     if (entity != null && !entity.IsDestroyed)
                     {
-                        entity.Kill();
-                        Puts($"Barricade destroyed after 7 seconds");
+                        Puts($"[Barricade] Destroying barricade ID: {entity.net.ID}");
+                        entity.Kill(BaseNetworkable.DestroyMode.None);
                     }
+                    
+                    // Clean up timer reference
+                    if (entity != null)
+                        barricadeTimers.Remove(entity.net.ID);
                 });
+                
+                barricadeTimers[entity.net.ID] = destroyTimer;
+            }
+        }
+        
+        // Clean up barricade timer if destroyed early
+        void OnEntityKill(BaseEntity entity)
+        {
+            if (entity == null) return;
+            
+            if (barricadeTimers.ContainsKey(entity.net.ID))
+            {
+                barricadeTimers[entity.net.ID]?.Destroy();
+                barricadeTimers.Remove(entity.net.ID);
             }
         }
 
@@ -1527,11 +1571,30 @@ namespace Oxide.Plugins
         {
             if (player == null || !player.IsConnected) return;
             
-            if (lobbySpawnPos != Vector3.zero)
+            if (lobbySpawnPos == Vector3.zero)
             {
-                player.Teleport(lobbySpawnPos);
-                player.SendNetworkUpdateImmediate(); // Update network state so other players can see
+                Puts($"Cannot teleport {player.displayName} to lobby - lobby spawn not set!");
+                SendReply(player, "⚠ Lobby spawn not set! Admin needs to run /set_lobby_spawn");
+                return;
             }
+            
+            // Ensure player is fully spawned before teleporting
+            NextTick(() =>
+            {
+                if (player != null && player.IsConnected)
+                {
+                    // Wake player if sleeping
+                    if (player.IsSleeping()) 
+                        player.EndSleeping();
+                    
+                    // Force position update
+                    player.MovePosition(lobbySpawnPos);
+                    player.ClientRPCPlayer(null, player, "ForcePositionTo", lobbySpawnPos);
+                    player.SendNetworkUpdateImmediate();
+                    
+                    Puts($"Teleported {player.displayName} to lobby at {lobbySpawnPos}");
+                }
+            });
         }
         
         private void TeleportAllToLobby()
