@@ -300,12 +300,12 @@ namespace Oxide.Plugins
             if (hudTimer != null) hudTimer.Destroy();
             if (debugTimer != null) debugTimer.Destroy();
             
-            // Cleanup barricade timers
-            foreach (var timer in barricadeTimers.Values)
+            // Cleanup entity timers
+            foreach (var timer in entityTimers.Values)
             {
                 timer?.Destroy();
             }
-            barricadeTimers.Clear();
+            entityTimers.Clear();
             
             foreach (var player in BasePlayer.activePlayerList)
             {
@@ -1054,14 +1054,35 @@ namespace Oxide.Plugins
                         }
                     }
                     
-                    if (goalPos != Vector3.zero) player.Teleport(goalPos + (goalRot * Vector3.forward * 5f));
+                    // Force instant respawn
+                    if (goalPos != Vector3.zero) 
+                    {
+                        player.MovePosition(goalPos + (goalRot * Vector3.forward * 5f));
+                        player.ClientRPCPlayer(null, player, "ForcePositionTo", goalPos + (goalRot * Vector3.forward * 5f));
+                    }
+                    
                     player.metabolism.radiation_poison.value = 0;
                     player.health = player.MaxHealth();
                     if (player.IsSleeping()) player.EndSleeping();
+                    player.SendNetworkUpdateImmediate();
+                    
                     GiveKit(player, role);
-                    player.SendNetworkUpdateImmediate(); // Update network state so other players can see
+                    
+                    // Force another network update after giving kit
+                    player.SendNetworkUpdateImmediate();
                 });
             }
+        }
+        
+        // Skip respawn screen - instant respawn
+        object OnPlayerRespawnOnMap(BasePlayer player, Vector3 position)
+        {
+            if (matchStarted && (redTeam.Contains(player.userID) || blueTeam.Contains(player.userID) || blackTeam.Contains(player.userID)))
+            {
+                // Skip respawn screen by respawning immediately
+                return null;
+            }
+            return null;
         }
 
         void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo info)
@@ -1080,55 +1101,66 @@ namespace Oxide.Plugins
             }
         }
 
-        // Track barricades for auto-destroy
-        private Dictionary<NetworkableId, Timer> barricadeTimers = new Dictionary<NetworkableId, Timer>();
+        // Track player-placed entities for auto-destroy
+        private Dictionary<NetworkableId, Timer> entityTimers = new Dictionary<NetworkableId, Timer>();
         
         void OnEntityBuilt(Planner plan, GameObject go, BasePlayer player)
         {
             BaseEntity entity = go.ToBaseEntity();
             if (entity == null || player == null) return;
 
-            // Auto-destroy barricades after 7 seconds
+            // Auto-destroy ALL player-placed entities after 7 seconds
             string shortName = entity.ShortPrefabName ?? "";
             string fullName = entity.PrefabName ?? "";
             
-            // Check if it's a barricade
-            if (shortName.Contains("barricade") || fullName.Contains("barricade.wood") || shortName == "barricade.wood.cover")
+            // Check if it's a deployable/buildable (barricades, walls, boxes, etc.)
+            bool shouldDestroy = shortName.Contains("barricade") || 
+                                 fullName.Contains("barricade") ||
+                                 shortName.Contains("wall") ||
+                                 fullName.Contains("wall") ||
+                                 shortName.Contains("gate") ||
+                                 shortName.Contains("deploy") ||
+                                 shortName.Contains("box") ||
+                                 shortName.Contains("shutter") ||
+                                 entity is BuildingBlock ||
+                                 entity is Deployable;
+            
+            if (shouldDestroy)
             {
-                Puts($"[Barricade] Placed by {player.displayName} (ID: {entity.net.ID}), will destroy in 7 seconds");
-                SendReply(player, "⚠ Barricade will auto-destroy in 7 seconds!");
+                Puts($"[Entity] {shortName} placed by {player.displayName} (ID: {entity.net.ID}), will destroy in 7 seconds");
+                SendReply(player, $"⚠ {shortName} will auto-destroy in 7 seconds!");
                 
                 // Store timer reference
                 var destroyTimer = timer.Once(7f, () =>
                 {
                     if (entity != null && !entity.IsDestroyed)
                     {
-                        Puts($"[Barricade] Destroying barricade ID: {entity.net.ID}");
+                        Puts($"[Entity] Destroying {shortName} ID: {entity.net.ID}");
                         entity.Kill(BaseNetworkable.DestroyMode.None);
                     }
                     
                     // Clean up timer reference
                     if (entity != null)
-                        barricadeTimers.Remove(entity.net.ID);
+                        entityTimers.Remove(entity.net.ID);
                 });
                 
-                barricadeTimers[entity.net.ID] = destroyTimer;
+                entityTimers[entity.net.ID] = destroyTimer;
             }
         }
         
-        // Clean up barricade timer if destroyed early
+        // Clean up entity timer if destroyed early
         void OnEntityKill(BaseEntity entity)
         {
             if (entity == null) return;
             
-            if (barricadeTimers.ContainsKey(entity.net.ID))
+            if (entityTimers.ContainsKey(entity.net.ID))
             {
-                barricadeTimers[entity.net.ID]?.Destroy();
-                barricadeTimers.Remove(entity.net.ID);
+                entityTimers[entity.net.ID]?.Destroy();
+                entityTimers.Remove(entity.net.ID);
             }
         }
         
-        // Handle player death - delete corpse
+        // Handle player death - delete corpse, loot bags, and dropped items
         void OnEntityDeath(BaseCombatEntity entity, HitInfo info)
         {
             if (entity == null) return;
@@ -1139,39 +1171,87 @@ namespace Oxide.Plugins
                 BasePlayer player = entity as BasePlayer;
                 if (player != null)
                 {
-                    Puts($"[Corpse] Player {player.displayName} died, will delete corpse");
+                    Puts($"[Death] Player {player.displayName} died, cleaning up corpse and items");
+                    
+                    // Store player position for item cleanup
+                    Vector3 deathPos = player.transform.position;
                     
                     // Find and delete corpse on next frame
                     NextTick(() =>
                     {
+                        // Delete corpse
                         var corpses = UnityEngine.Object.FindObjectsOfType<PlayerCorpse>();
                         foreach (var corpse in corpses)
                         {
                             if (corpse.playerSteamID == player.userID)
                             {
-                                Puts($"[Corpse] Deleting corpse for {player.displayName}");
+                                Puts($"[Death] Deleting corpse for {player.displayName}");
                                 corpse.Kill(BaseNetworkable.DestroyMode.None);
                             }
                         }
+                        
+                        // Delete dropped items and loot bags near death position
+                        var nearbyEntities = Pool.GetList<BaseEntity>();
+                        Vis.Entities(deathPos, 5f, nearbyEntities);
+                        
+                        foreach (var ent in nearbyEntities)
+                        {
+                            if (ent == null || ent.IsDestroyed) continue;
+                            
+                            // Delete dropped weapons
+                            if (ent is DroppedItem || ent is DroppedItemContainer)
+                            {
+                                Puts($"[Death] Deleting dropped item: {ent.ShortPrefabName}");
+                                ent.Kill(BaseNetworkable.DestroyMode.None);
+                            }
+                            // Delete loot containers/bags
+                            else if (ent is LootContainer || ent is DroppedItemContainer)
+                            {
+                                Puts($"[Death] Deleting loot container: {ent.ShortPrefabName}");
+                                ent.Kill(BaseNetworkable.DestroyMode.None);
+                            }
+                            // Delete any item entity
+                            else if (ent.ShortPrefabName != null && 
+                                    (ent.ShortPrefabName.Contains("item_drop") || 
+                                     ent.ShortPrefabName.Contains("loot")))
+                            {
+                                Puts($"[Death] Deleting item: {ent.ShortPrefabName}");
+                                ent.Kill(BaseNetworkable.DestroyMode.None);
+                            }
+                        }
+                        
+                        Pool.FreeList(ref nearbyEntities);
                     });
                 }
             }
         }
         
-        // Backup corpse deletion on populate
+        // Backup corpse deletion on populate - also clean up loot
         void OnCorpsePopulate(PlayerCorpse corpse, BasePlayer player)
         {
             if (corpse == null || player == null) return;
             
-            Puts($"[Corpse] Corpse created for {player.displayName}, deleting immediately");
+            Puts($"[Death] Corpse created for {player.displayName}, deleting immediately with all loot");
             
-            // Delete corpse after brief delay
+            // Clear corpse containers before deletion
+            if (corpse.containers != null)
+            {
+                foreach (var container in corpse.containers)
+                {
+                    if (container != null)
+                    {
+                        container.Clear();
+                    }
+                }
+            }
+            
+            // Delete corpse immediately
             timer.Once(0.1f, () =>
             {
                 if (corpse != null && !corpse.IsDestroyed)
                 {
                     corpse.Kill(BaseNetworkable.DestroyMode.None);
-                    Puts($"[Corpse] Deleted corpse for {player.displayName}");
+                    Puts($"[Death] Deleted corpse for {player.displayName}");
                 }
             });
         }
