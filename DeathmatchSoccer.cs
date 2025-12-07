@@ -1495,12 +1495,8 @@ namespace Oxide.Plugins
                 if (firework != null)
                 {
                     firework.Spawn();
-                    // Try to ignite if it's a firework
-                    BaseFire fire = firework as BaseFire;
-                    if (fire != null)
-                    {
-                        fire.Ignite();
-                    }
+                    // Try to ignite if it's a firework - use SendMessage to avoid type dependency
+                    firework.SendMessage("Ignite");
                     // Auto-cleanup after 15 seconds
                     timer.Once(15f, () =>
                     {
@@ -1547,12 +1543,8 @@ namespace Oxide.Plugins
                 if (mortar != null)
                 {
                     mortar.Spawn();
-                    // Try to ignite the mortar
-                    BaseFire fire = mortar as BaseFire;
-                    if (fire != null)
-                    {
-                        fire.Ignite();
-                    }
+                    // Try to ignite the mortar - use SendMessage to avoid type dependency
+                    mortar.SendMessage("Ignite");
                     // Auto-cleanup after 10 seconds
                     timer.Once(10f, () =>
                     {
