@@ -574,6 +574,23 @@ namespace Oxide.Plugins
             CuiHelper.DestroyUi(player, "RoleSelectUI");
             AssignRole(player, arg.Args[0]);
         }
+        
+        [ConsoleCommand("test_sphere_ui")]
+        private void CmdTestSphereUI(ConsoleSystem.Arg arg)
+        {
+            var player = arg.Player();
+            if (player == null) return;
+            
+            if (!player.IsAdmin)
+            {
+                player.ChatMessage("You must be an admin to use this command.");
+                return;
+            }
+            
+            Puts($"=== TEST COMMAND: Showing UI for {player.displayName} ===");
+            ShowTeamSelectUI(player);
+            player.ChatMessage("UI test triggered - check if UI appeared");
+        }
 
         private void AssignRole(BasePlayer player, string role)
         {
@@ -1419,14 +1436,21 @@ namespace Oxide.Plugins
         // ==========================================
         private void MonitorLobbySpheresStart()
         {
+            Puts("=== MonitorLobbySpheresStart CALLED ===");
+            
             // Stop existing timer
             if (sphereMonitorTimer != null && !sphereMonitorTimer.Destroyed)
             {
                 sphereMonitorTimer.Destroy();
+                Puts("Destroyed existing sphere monitor timer");
             }
+            
+            Puts($"Creating sphere monitor timer (lobbyActive: {lobbyActive}, sphere pos: {lobbySpherePos})");
             
             // Start new monitoring timer
             sphereMonitorTimer = timer.Repeat(0.5f, 0, () => {
+                Puts($"[Sphere Monitor Tick] lobbyActive: {lobbyActive}, players: {BasePlayer.activePlayerList.Count}");
+                
                 if (!lobbyActive) return;
                 
                 foreach (var player in BasePlayer.activePlayerList)
@@ -1438,7 +1462,7 @@ namespace Oxide.Plugins
                 }
             });
             
-            Puts("Lobby sphere monitoring started");
+            Puts("Lobby sphere monitoring timer started");
         }
         
         private void CheckSphereProximity(BasePlayer player, Vector3 spherePos)
@@ -1472,11 +1496,16 @@ namespace Oxide.Plugins
         
         private void OnPlayerEnterSphere(BasePlayer player)
         {
+            Puts($"=== OnPlayerEnterSphere called for {player.displayName} ===");
+            
             // Show team selection UI
+            Puts("Calling ShowTeamSelectUI...");
             ShowTeamSelectUI(player);
+            Puts("ShowTeamSelectUI completed");
             
             // Show hint
             player.ShowToast(GameTip.Styles.Blue_Normal, "Walk into sphere to join a team!");
+            Puts("Toast message sent");
         }
         
         private void SpawnLobbySphere()
