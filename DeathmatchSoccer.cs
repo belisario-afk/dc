@@ -946,7 +946,7 @@ namespace Oxide.Plugins
                     lastKicker = p; 
                     Vector3 dir = (entity.transform.position - p.transform.position).normalized; dir.y += 0.2f; 
                     entity.GetComponent<Rigidbody>()?.AddForce(dir * KickForceMultiplier, ForceMode.Impulse);
-                    Effect.server.Run("assets/bundled/prefabs/fx/impacts/blunt/metal/metal_impact.prefab", entity.transform.position);
+                    Effect.server.Run("assets/bundled/prefabs/fx/impacts/additive/metal.prefab", entity.transform.position);
                 }
             }
         }
@@ -1080,12 +1080,10 @@ namespace Oxide.Plugins
             Vector3 goalPos = activeBall.transform.position;
             Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", goalPos);
             
-            // Flamethrower fire effect
-            Effect.server.Run("assets/prefabs/weapons/militaryflamethrower/effects/flamethrower_military_fire.prefab", goalPos);
-            
-            // Confetti cannon effects
-            Effect.server.Run("assets/prefabs/misc/confetticannon/effects/confetticannon_blast.prefab", goalPos);
-            timer.Once(0.2f, () => Effect.server.Run("assets/prefabs/misc/confetticannon/effects/confetti-cannon-deploy.prefab", goalPos));
+            // Additional celebratory firework effects at goal
+            Effect.server.Run("assets/prefabs/deployable/fireworks/mortarred.prefab", goalPos + new Vector3(2f, 0, 0));
+            Effect.server.Run("assets/prefabs/deployable/fireworks/mortarblue.prefab", goalPos + new Vector3(-2f, 0, 0));
+            Effect.server.Run("assets/prefabs/deployable/fireworks/mortarviolet.prefab", goalPos + new Vector3(0, 0, 2f));
             
             RefreshScoreboardAll(); ShowGoalBanner(team);
             string mvp = (lastKicker != null) ? lastKicker.displayName : "None";
