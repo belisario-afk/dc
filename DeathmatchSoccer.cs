@@ -550,10 +550,40 @@ namespace Oxide.Plugins
         {
             playerRoles[player.userID] = role;
             if (centerPos != Vector3.zero) {
-                Vector3 goalPos = redTeam.Contains(player.userID) ? redGoalPos : 
-                                 blueTeam.Contains(player.userID) ? blueGoalPos : blackGoalPos;
-                Quaternion goalRot = redTeam.Contains(player.userID) ? redGoalRot : 
-                                    blueTeam.Contains(player.userID) ? blueGoalRot : blackGoalRot;
+                Vector3 goalPos;
+                Quaternion goalRot;
+                
+                if (redTeam.Contains(player.userID))
+                {
+                    goalPos = redGoalPos;
+                    goalRot = redGoalRot;
+                }
+                else if (blueTeam.Contains(player.userID))
+                {
+                    goalPos = blueGoalPos;
+                    goalRot = blueGoalRot;
+                }
+                else // Black team
+                {
+                    // Determine which black goal position to use
+                    if (activeGoals["black1"])
+                    {
+                        goalPos = blackGoalPos1;
+                        goalRot = blackGoalRot1;
+                    }
+                    else if (activeGoals["black2"])
+                    {
+                        goalPos = blackGoalPos2;
+                        goalRot = blackGoalRot2;
+                    }
+                    else
+                    {
+                        // Default to black1 if neither is active (shouldn't happen in normal gameplay)
+                        goalPos = blackGoalPos1 != Vector3.zero ? blackGoalPos1 : blackGoalPos2;
+                        goalRot = blackGoalPos1 != Vector3.zero ? blackGoalRot1 : blackGoalRot2;
+                    }
+                }
+                
                 Vector3 spawn = goalPos + (goalRot * Vector3.forward * 5f);
                 player.Teleport(spawn);
             }
@@ -642,7 +672,21 @@ namespace Oxide.Plugins
                 // GOALIE LEASH
                 if (role == "Goalie")
                 {
-                    Vector3 home = isRed ? redGoalPos : isBlue ? blueGoalPos : blackGoalPos;
+                    Vector3 home;
+                    if (isRed)
+                    {
+                        home = redGoalPos;
+                    }
+                    else if (isBlue)
+                    {
+                        home = blueGoalPos;
+                    }
+                    else // Black team
+                    {
+                        // Determine which black goal position to use
+                        home = activeGoals["black1"] ? blackGoalPos1 : blackGoalPos2;
+                    }
+                    
                     if (home != Vector3.zero && Vector3.Distance(player.transform.position, home) > LeashRadius)
                     {
                         player.ShowToast(GameTip.Styles.Red_Normal, "RETURN TO GOAL!");
@@ -835,10 +879,35 @@ namespace Oxide.Plugins
                 NextTick(() => {
                     if (!playerRoles.ContainsKey(player.userID)) playerRoles[player.userID] = "Striker";
                     string role = playerRoles[player.userID];
-                    Vector3 goalPos = redTeam.Contains(player.userID) ? redGoalPos : 
-                                     blueTeam.Contains(player.userID) ? blueGoalPos : blackGoalPos;
-                    Quaternion goalRot = redTeam.Contains(player.userID) ? redGoalRot : 
-                                        blueTeam.Contains(player.userID) ? blueGoalRot : blackGoalRot;
+                    
+                    Vector3 goalPos;
+                    Quaternion goalRot;
+                    
+                    if (redTeam.Contains(player.userID))
+                    {
+                        goalPos = redGoalPos;
+                        goalRot = redGoalRot;
+                    }
+                    else if (blueTeam.Contains(player.userID))
+                    {
+                        goalPos = blueGoalPos;
+                        goalRot = blueGoalRot;
+                    }
+                    else // Black team
+                    {
+                        // Determine which black goal position to use
+                        if (activeGoals["black1"])
+                        {
+                            goalPos = blackGoalPos1;
+                            goalRot = blackGoalRot1;
+                        }
+                        else
+                        {
+                            goalPos = blackGoalPos2;
+                            goalRot = blackGoalRot2;
+                        }
+                    }
+                    
                     if (goalPos != Vector3.zero) player.Teleport(goalPos + (goalRot * Vector3.forward * 5f));
                     player.metabolism.radiation_poison.value = 0;
                     player.health = player.MaxHealth();
@@ -1073,17 +1142,17 @@ namespace Oxide.Plugins
             {
                 // Black is leaving, need to determine which black goal to deactivate
                 // and activate the original team goal
-                if (!activeGoals["black1"]) // Black was using black2
-                {
-                    activeGoals["black2"] = false;
-                    activeGoals["blue"] = true;
-                    PrintToChat($"Blue team reclaiming their goal!");
-                }
-                else // Black was using black1
+                if (activeGoals["black1"]) // Black was using black1 (at red position)
                 {
                     activeGoals["black1"] = false;
                     activeGoals["red"] = true;
                     PrintToChat($"Red team reclaiming their goal!");
+                }
+                else if (activeGoals["black2"]) // Black was using black2 (at blue position)
+                {
+                    activeGoals["black2"] = false;
+                    activeGoals["blue"] = true;
+                    PrintToChat($"Blue team reclaiming their goal!");
                 }
             }
             
