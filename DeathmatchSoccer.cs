@@ -1472,111 +1472,32 @@ namespace Oxide.Plugins
         
         private void LaunchFirework(Vector3 position, string team)
         {
-            // Team-colored fireworks using entity spawning
-            string fireworkPrefab = "";
-            if (team == "BLUE")
-            {
-                fireworkPrefab = "assets/prefabs/deployable/fireworks/boomer.blue.item.prefab";
-            }
-            else if (team == "RED")
-            {
-                fireworkPrefab = "assets/prefabs/deployable/fireworks/boomer.red.item.prefab";
-            }
-            else if (team == "BLACK")
-            {
-                fireworkPrefab = "assets/prefabs/deployable/fireworks/boomer.violet.item.prefab";
-            }
+            // Use C4 explosion as "firework" - reliable and visible
+            Vector3 spawnPos = position + new Vector3(0, 30f, 0);
+            Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", spawnPos);
             
-            // Spawn team-colored firework entity at 30m height
-            if (!string.IsNullOrEmpty(fireworkPrefab))
-            {
-                Vector3 spawnPos = position + new Vector3(0, 30f, 0);
-                BaseEntity firework = GameManager.server.CreateEntity(fireworkPrefab, spawnPos);
-                if (firework != null)
-                {
-                    firework.Spawn();
-                    // Try to ignite if it's a firework - pass null as BasePlayer parameter
-                    firework.SendMessage("Ignite", null, SendMessageOptions.DontRequireReceiver);
-                    // Auto-cleanup after 15 seconds
-                    timer.Once(15f, () =>
-                    {
-                        if (firework != null && !firework.IsDestroyed)
-                        {
-                            firework.Kill();
-                        }
-                    });
-                }
-            }
-            
-            // Backup explosion effect
-            Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", position + new Vector3(0, 30f, 0));
-            
-            // Add some sparkles
+            // Add sparkles for extra effect
             for (int i = 0; i < 5; i++)
             {
                 Vector3 offset = new Vector3(UnityEngine.Random.Range(-5f, 5f), UnityEngine.Random.Range(-3f, 3f), UnityEngine.Random.Range(-5f, 5f));
-                Effect.server.Run("assets/bundled/prefabs/fx/item_break.prefab", position + new Vector3(0, 30f, 0) + offset);
+                Effect.server.Run("assets/bundled/prefabs/fx/item_break.prefab", spawnPos + offset);
             }
         }
         
         private void SpawnGoalEffects(Vector3 position)
         {
-            // Spawn 3 mortar fireworks using entity spawning
-            string[] mortarPrefabs = new string[]
-            {
-                "assets/prefabs/deployable/fireworks/mortarred.prefab",
-                "assets/prefabs/deployable/fireworks/mortarblue.prefab",
-                "assets/prefabs/deployable/fireworks/mortarviolet.prefab"
-            };
+            // Main C4 explosion at ball position
+            Effect.server.Run("assets/prefabs/tools/c4/effects/c4_explosion.prefab", position);
             
-            Vector3[] offsets = new Vector3[]
+            // Sparkle particles spread around for extra effect
+            for (int i = 0; i < 5; i++)
             {
-                new Vector3(2f, 0, 0),
-                new Vector3(-2f, 0, 0),
-                new Vector3(0, 0, 2f)
-            };
-            
-            for (int i = 0; i < mortarPrefabs.Length; i++)
-            {
-                Vector3 spawnPos = position + offsets[i];
-                BaseEntity mortar = GameManager.server.CreateEntity(mortarPrefabs[i], spawnPos);
-                if (mortar != null)
-                {
-                    mortar.Spawn();
-                    // Try to ignite the mortar - pass null as BasePlayer parameter
-                    mortar.SendMessage("Ignite", null, SendMessageOptions.DontRequireReceiver);
-                    // Auto-cleanup after 10 seconds
-                    timer.Once(10f, () =>
-                    {
-                        if (mortar != null && !mortar.IsDestroyed)
-                        {
-                            mortar.Kill();
-                        }
-                    });
-                }
-            }
-            
-            // Spawn confetti cannon entity (not the blast effect)
-            BaseEntity confetti = GameManager.server.CreateEntity("assets/prefabs/misc/confetticannon/confetticannon.prefab", position);
-            if (confetti != null)
-            {
-                confetti.Spawn();
-                // Try to deploy confetti
-                timer.Once(0.1f, () =>
-                {
-                    if (confetti != null && !confetti.IsDestroyed)
-                    {
-                        confetti.SendMessage("Deploy", SendMessageOptions.DontRequireReceiver);
-                    }
-                });
-                // Auto-cleanup after 5 seconds
-                timer.Once(5f, () =>
-                {
-                    if (confetti != null && !confetti.IsDestroyed)
-                    {
-                        confetti.Kill();
-                    }
-                });
+                Vector3 offset = new Vector3(
+                    UnityEngine.Random.Range(-3f, 3f), 
+                    UnityEngine.Random.Range(0f, 2f), 
+                    UnityEngine.Random.Range(-3f, 3f)
+                );
+                Effect.server.Run("assets/bundled/prefabs/fx/item_break.prefab", position + offset);
             }
         }
         
