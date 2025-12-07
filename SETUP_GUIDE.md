@@ -1,17 +1,24 @@
 # DeathmatchSoccer Setup Guide
 
 ## Overview
-DeathmatchSoccer is a 3-team competitive soccer plugin for Rust with **rotation mode** (2 teams play, 1 waits), custom team skins, modern UI, and two distinct player roles.
+DeathmatchSoccer is a 3-team competitive soccer plugin for Rust with **goal swapping rotation** system, custom team skins, modern UI, and two distinct player roles.
 
 ## Game Modes
 
-### Rotation Mode (Default - Enabled)
-- **2 teams play** at a time
-- **1 team waits** in a designated area
-- **Winner stays** on the field
-- **Waiting team challenges** the winner
-- **Loser goes to waiting area**
-- Creates a tournament-style rotation
+### Rotation Mode (Default - Enabled) - Goal Swapping System
+- **2 teams play** at a time with their goals active
+- **1 team waits** for the next match
+- **Winner stays** at their goal
+- **Loser's goal is replaced** by the waiting team's goal at that position
+- **No teleportation** - seamless goal swapping creates fluid rotation
+- Creates a tournament-style rotation without moving players
+
+**How It Works:**
+1. Place 2 black goals (one at red position, one at blue position)
+2. Match starts: Red vs Blue goals active, black goals inactive
+3. Team loses: Their goal deactivates, black goal at that position activates
+4. Winner continues, black team takes over loser's goal position
+5. Next match: New rotation with active goal swapping
 
 ### 3-Way Battle Mode
 - All 3 teams play simultaneously
@@ -74,10 +81,12 @@ As admin, position yourself where each goal should be and run:
 ```
 /set_red      # Set red team goal position
 /set_blue     # Set blue team goal position
-/set_black    # Set black team goal position
+/set_black1   # Set black goal at red position (for rotation)
+/set_black2   # Set black goal at blue position (for rotation)
 /set_center   # Set ball spawn position
-/set_waiting  # Set waiting area for rotation mode
 ```
+
+**Note:** Black goals should be placed at the same positions as red and blue goals. When a team loses, their goal gets replaced by the black goal at that position.
 
 ### Step 2: Configure Goal Size (Optional)
 ```
@@ -142,7 +151,7 @@ Set custom skin IDs for each team using:
 /rotation     # Toggle rotation mode ON/OFF (default: ON)
 ```
 
-**Rotation Mode ON:** 2 teams play, 1 waits, winner battles waiting team  
+**Rotation Mode ON:** Goal swapping system - loser's goal replaced by waiting team  
 **Rotation Mode OFF:** Traditional 3-way battle
 
 ### Step 7: Start Match
@@ -150,26 +159,37 @@ Set custom skin IDs for each team using:
 /start_match  # Begins the match with current settings
 ```
 
-## Rotation Mode Details
+## Goal Swapping Rotation Details
 
 When rotation mode is enabled (default):
 
-1. **Initial Match:** Blue (GRUB) vs Red (DOORCAMPER), Black (PZG) waits
-2. **After Match:** Winner stays, waiting team enters, loser waits
-3. **Continuous:** Matches continue rotating automatically
+1. **Initial Match:** Blue vs Red goals active, both black goals inactive
+2. **After Match:** Winner's goal stays active, loser's goal deactivated and replaced by black goal
+3. **Continuous:** Matches continue with automatic goal swapping
 
 **Example Flow:**
 ```
-Match 1: GRUB vs DOORCAMPER (ROAMER waits) → Winner: GRUB
-Match 2: GRUB vs ROAMER (DOORCAMPER waits) → Winner: ROAMER  
-Match 3: ROAMER vs DOORCAMPER (GRUB waits) → Winner: DOORCAMPER
-Match 4: DOORCAMPER vs GRUB (ROAMER waits) → ...continues
+Match 1: GRUB (blue) vs DOORCAMPER (red)
+         [Red Goal Active] vs [Blue Goal Active]
+         Winner: GRUB
+
+Match 2: GRUB (blue) vs ROAMER (black at red position)
+         [Blue Goal Active] vs [Black Goal 1 Active - replaced red]
+         DOORCAMPER waits
+         Winner: ROAMER
+
+Match 3: ROAMER (black at red) vs DOORCAMPER (red reclaimed)
+         [Black Goal 1 Active] vs [Red Goal Active - reclaimed]
+         GRUB waits
+         ... continues rotating
 ```
 
-**Scoreboard Display:**
-- Shows "MATCH #X" at top
-- Displays only the 2 playing teams
-- Shows "Waiting: TEAM" at bottom
+**Key Features:**
+- No player teleportation needed
+- Goals swap seamlessly at existing positions
+- Only active goals count for scoring
+- Winner always stays at their goal
+- Loser's position becomes waiting team's goal
 
 ## Player Commands
 
@@ -186,14 +206,15 @@ Match 4: DOORCAMPER vs GRUB (ROAMER waits) → ...continues
 
 ### Game Modes
 
-#### Rotation Mode (Default)
+#### Rotation Mode (Default) - Goal Swapping
 - **2 teams play**, 1 team waits
 - First team to **5 goals** wins the match
-- Winner stays to face the waiting team
-- Loser goes to waiting area
-- Waiting team teleports to waiting area position
-- Matches automatically rotate
-- Only playing teams can score
+- Winner's goal stays active
+- Loser's goal is deactivated and replaced by black goal
+- Waiting team's goal activates at loser's position
+- Matches automatically rotate with goal swapping
+- Only active goals count for scoring
+- No player teleportation required
 
 #### 3-Way Battle Mode
 - All 3 teams play simultaneously
@@ -201,8 +222,9 @@ Match 4: DOORCAMPER vs GRUB (ROAMER waits) → ...continues
 - All teams can score at any time
 
 ### Scoring
-- Score by shooting the ball into opponent goals
-- In rotation mode, only goals by playing teams count
+- Score by shooting the ball into active opponent goals
+- In rotation mode, only active goals count
+- Inactive goals (faded in debug mode) don't register scoring
 - Goals require the ball to enter the goal zone
 - MVP tracked (last player to kick the ball)
 
@@ -224,19 +246,22 @@ Match 4: DOORCAMPER vs GRUB (ROAMER waits) → ...continues
 ## Debug Commands
 
 ```
-/rotation     # Toggle rotation mode (2 play, 1 waits)
-/goal_debug   # Toggle goal zone visualization (shows boxes)
+/rotation     # Toggle rotation mode (goal swapping)
+/goal_debug   # Toggle goal visualization (shows active/inactive goals)
 /reset_ball   # Respawn the ball at center
 /load_goals   # Reload saved arena data
 ```
 
+**Note:** In debug mode, active goals show in full color, inactive goals are faded.
+
 ## UI Elements
 
 ### Scoreboard (Top Center)
-- **Rotation Mode:** Shows 2 playing teams with "VS", match number, and waiting team
+- **Rotation Mode:** Shows 2 playing teams with "VS", match number, and next team
 - **3-Way Mode:** Shows all 3 team scores
-- Displays team tags (GRUB, DOORCAMPER, ROAMER)
+- Displays team tags (GRUB, DOORCAMPER, PZG)
 - Color-coded per team
+- Only shows scores for teams with active goals
 
 ### Team Selection UI
 - Shows all 3 teams with names and tags
@@ -304,5 +329,5 @@ private int ScoreToWin = 5;                   // Goals needed to win
 
 ## Credits
 - Plugin: KillaDome
-- Version: 5.2.0
+- Version: 5.3.0
 - Updated: 2024-12-06
