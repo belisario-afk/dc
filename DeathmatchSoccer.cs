@@ -66,7 +66,12 @@ namespace Oxide.Plugins
         private float GoalDepth = 6.0f; 
 
         // IMAGES
-        private string ImgScoreboardBg = "https://i.imgur.com/6Xq6x9q.png"; 
+        // 3 Scoreboard backgrounds for different matchups
+        private string ImgScoreboardBgRedBlue = "https://i.imgur.com/6Xq6x9q.png"; 
+        private string ImgScoreboardBgBlackRed = "https://i.imgur.com/PLACEHOLDER1.png"; // TODO: Replace with actual URL
+        private string ImgScoreboardBgBlueBlack = "https://i.imgur.com/PLACEHOLDER2.png"; // TODO: Replace with actual URL
+        
+        // 3 Goal banner images for different matchups
         private string ImgGoalBannerRedBlue = "https://i.imgur.com/Jb9y1Xm.png";
         private string ImgGoalBannerBlackRed = "https://i.imgur.com/8KqZx4Y.png";
         private string ImgGoalBannerBlueBlack = "https://i.imgur.com/5LmNp2X.png";
@@ -265,7 +270,12 @@ namespace Oxide.Plugins
             
             if (ImageLibrary != null)
             {
-                ImageLibrary.Call("AddImage", ImgScoreboardBg, "Soccer_Bar_BG");
+                // Register 3 scoreboard backgrounds for different matchups
+                ImageLibrary.Call("AddImage", ImgScoreboardBgRedBlue, "Soccer_Bar_BG_RedBlue");
+                ImageLibrary.Call("AddImage", ImgScoreboardBgBlackRed, "Soccer_Bar_BG_BlackRed");
+                ImageLibrary.Call("AddImage", ImgScoreboardBgBlueBlack, "Soccer_Bar_BG_BlueBlack");
+                
+                // Register 3 goal banner images for different matchups
                 ImageLibrary.Call("AddImage", ImgGoalBannerRedBlue, "Soccer_Goal_Banner_RedBlue");
                 ImageLibrary.Call("AddImage", ImgGoalBannerBlackRed, "Soccer_Goal_Banner_BlackRed");
                 ImageLibrary.Call("AddImage", ImgGoalBannerBlueBlack, "Soccer_Goal_Banner_BlueBlack");
@@ -750,7 +760,22 @@ namespace Oxide.Plugins
             if (!matchStarted) return;
 
             var container = new CuiElementContainer();
-            string imgId = GetImg("Soccer_Bar_BG");
+            
+            // Select scoreboard background based on current matchup
+            string scoreboardKey = "Soccer_Bar_BG_RedBlue"; // Default
+            
+            if ((team1Playing == "black" && team2Playing == "red") || 
+                (team1Playing == "red" && team2Playing == "black"))
+            {
+                scoreboardKey = "Soccer_Bar_BG_BlackRed";
+            }
+            else if ((team1Playing == "blue" && team2Playing == "black") || 
+                     (team1Playing == "black" && team2Playing == "blue"))
+            {
+                scoreboardKey = "Soccer_Bar_BG_BlueBlack";
+            }
+            
+            string imgId = GetImg(scoreboardKey);
             
             var panel = new CuiPanel { Image = { Color = "0 0 0 0.8" }, RectTransform = { AnchorMin = "0.25 0.88", AnchorMax = "0.75 0.98" }, CursorEnabled = false };
             if (!string.IsNullOrEmpty(imgId))
