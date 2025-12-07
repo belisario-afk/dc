@@ -1436,6 +1436,7 @@ namespace Oxide.Plugins
         // ==========================================
         private void MonitorLobbySpheresStart()
         {
+            PrintToChat("=== MONITORING FUNCTION CALLED ==="); // FIRST thing - verify function runs
             Puts("=== MonitorLobbySpheresStart CALLED ===");
             PrintToChat("DEBUG: MonitorLobbySpheresStart called"); // Also show in chat
             
@@ -1462,10 +1463,12 @@ namespace Oxide.Plugins
             // Start new monitoring timer
             sphereMonitorTimer = timer.Repeat(0.5f, 0, () => {
                 Puts($"[Sphere Monitor Tick] lobbyActive: {lobbyActive}, players: {BasePlayer.activePlayerList.Count}");
+                PrintToChat($"[Tick] Active: {lobbyActive}, Players: {BasePlayer.activePlayerList.Count}"); // Chat visibility
                 
                 if (!lobbyActive)
                 {
                     Puts("Skipping tick - lobbyActive is false");
+                    PrintToChat("Tick skipped - lobby not active");
                     return;
                 }
                 
@@ -1523,6 +1526,51 @@ namespace Oxide.Plugins
             // Show hint
             player.ShowToast(GameTip.Styles.Blue_Normal, "Walk into sphere to join a team!");
             Puts("Toast message sent");
+        }
+        
+        // DEBUG COMMANDS FOR SPHERE TROUBLESHOOTING
+        [ConsoleCommand("check_sphere")]
+        private void CheckSphereCommand(ConsoleSystem.Arg arg)
+        {
+            var player = arg.Player();
+            if (player == null || !player.IsAdmin)
+            {
+                if (player != null) player.ChatMessage("Admin only");
+                return;
+            }
+            
+            PrintToChat("=== MANUAL SPHERE CHECK ===");
+            foreach (var p in BasePlayer.activePlayerList)
+            {
+                if (p == null || !p.IsConnected) continue;
+                float dist = Vector3.Distance(p.transform.position, lobbySpherePos);
+                PrintToChat($"{p.displayName}: {dist:F1}m from sphere (radius: {sphereRadius}m)");
+                
+                if (dist <= sphereRadius)
+                {
+                    PrintToChat($"✓ Within range! Triggering UI...");
+                    ShowTeamSelectUI(p);
+                }
+            }
+        }
+        
+        [ConsoleCommand("sphere_info")]
+        private void SphereInfoCommand(ConsoleSystem.Arg arg)
+        {
+            var player = arg.Player();
+            if (player == null || !player.IsAdmin)
+            {
+                if (player != null) player.ChatMessage("Admin only");
+                return;
+            }
+            
+            PrintToChat("=== SPHERE DEBUG INFO ===");
+            PrintToChat($"Lobby Active: {lobbyActive}");
+            PrintToChat($"Sphere Position: {lobbySpherePos}");
+            PrintToChat($"Sphere Radius: {sphereRadius}m");
+            PrintToChat($"Monitor Timer Exists: {sphereMonitorTimer != null}");
+            PrintToChat($"Monitor Timer Destroyed: {sphereMonitorTimer != null && sphereMonitorTimer.Destroyed}");
+            PrintToChat($"Active Players: {BasePlayer.activePlayerList.Count}");
         }
         
         private void SpawnLobbySphere()
