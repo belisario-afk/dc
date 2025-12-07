@@ -378,7 +378,7 @@ namespace Oxide.Plugins
             if(!p.IsAdmin) return;
             
             lobbySpawnPos = p.transform.position;
-            SaveData();
+            SaveArenaData();
             SendReply(p, "✓ Lobby spawn point set! Players will teleport here during lobby.");
         }
         [ChatCommand("reset_ball")] private void CmdResetBall(BasePlayer p, string c, string[] a) { if(p.IsAdmin){ SpawnBall(); SendReply(p, "Ball Reset."); }}
