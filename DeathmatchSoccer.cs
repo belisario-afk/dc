@@ -1650,52 +1650,6 @@ namespace Oxide.Plugins
             player.SendConsoleCommand("ddraw.text", dur, col, c + new Vector3(0, hh + 2f, 0), "GOAL ZONE");
         }
         
-        private void DrawSphere(BasePlayer player, Vector3 center, Color col, float dur)
-        {
-            // Draw sphere outline
-            int segments = 16;
-            float radius = sphereRadius;
-            
-            // Draw horizontal circles at different heights
-            for (int h = -1; h <= 1; h++)
-            {
-                float y = h * radius * 0.7f;
-                float r = Mathf.Sqrt(radius * radius - y * y);
-                
-                for (int i = 0; i < segments; i++)
-                {
-                    float angle1 = (i / (float)segments) * Mathf.PI * 2;
-                    float angle2 = ((i + 1) / (float)segments) * Mathf.PI * 2;
-                    
-                    Vector3 p1 = center + new Vector3(Mathf.Cos(angle1) * r, y, Mathf.Sin(angle1) * r);
-                    Vector3 p2 = center + new Vector3(Mathf.Cos(angle2) * r, y, Mathf.Sin(angle2) * r);
-                    
-                    player.SendConsoleCommand("ddraw.line", dur, col, p1, p2);
-                }
-            }
-            
-            // Draw vertical circles
-            for (int i = 0; i < 4; i++)
-            {
-                float angle = (i / 4f) * Mathf.PI * 2;
-                Vector3 offset = new Vector3(Mathf.Cos(angle), 0, Mathf.Sin(angle));
-                
-                for (int j = 0; j < segments; j++)
-                {
-                    float a1 = (j / (float)segments) * Mathf.PI * 2;
-                    float a2 = ((j + 1) / (float)segments) * Mathf.PI * 2;
-                    
-                    Vector3 p1 = center + offset * Mathf.Cos(a1) * radius + Vector3.up * Mathf.Sin(a1) * radius;
-                    Vector3 p2 = center + offset * Mathf.Cos(a2) * radius + Vector3.up * Mathf.Sin(a2) * radius;
-                    
-                    player.SendConsoleCommand("ddraw.line", dur, col, p1, p2);
-                }
-            }
-            
-            // Draw text label
-            player.SendConsoleCommand("ddraw.text", dur, col, center + new Vector3(0, radius + 2f, 0), "JOIN SPHERE");
-        }
-
         private void CallMiddleware(string text)
         {
             var msg = new List<object> { new { role = "system", content = "Sports Caster AI" }, new { role = "user", content = text } };
