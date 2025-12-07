@@ -1218,7 +1218,7 @@ namespace Oxide.Plugins
                         }
                         
                         // Delete dropped items and loot bags near death position
-                        var nearbyEntities = Pool.GetList<BaseEntity>();
+                        var nearbyEntities = new List<BaseEntity>();
                         Vis.Entities(deathPos, 5f, nearbyEntities);
                         
                         foreach (var ent in nearbyEntities)
@@ -1246,8 +1246,6 @@ namespace Oxide.Plugins
                                 ent.Kill(BaseNetworkable.DestroyMode.None);
                             }
                         }
-                        
-                        Pool.FreeList(ref nearbyEntities);
                     });
                 }
             }
