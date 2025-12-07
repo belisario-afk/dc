@@ -163,6 +163,11 @@ namespace Oxide.Plugins
         private List<string> celebrationMessages = new List<string>();
         private Timer celebrationTimer;
         
+        // KILL FEED SYSTEM
+        private List<KillFeedEntry> killFeed = new List<KillFeedEntry>();
+        private Timer killFeedTimer;
+        private const int MAX_KILL_FEED_ENTRIES = 5;
+        
         // ACTIVE GOALS - Track which goals are currently in play
         private Dictionary<string, bool> activeGoals = new Dictionary<string, bool>
         {
@@ -200,6 +205,17 @@ namespace Oxide.Plugins
             public string Tag { get; set; }
             public string Color { get; set; }
             public string HexColor { get; set; }
+        }
+        
+        // KILL FEED ENTRY CLASS
+        private class KillFeedEntry
+        {
+            public string KillerName { get; set; }
+            public string VictimName { get; set; }
+            public string KillerTeam { get; set; }
+            public string VictimTeam { get; set; }
+            public string Message { get; set; }
+            public float Timestamp { get; set; }
         }
 
         // DATA FILE
@@ -683,7 +699,199 @@ namespace Oxide.Plugins
         }
 
         // ==========================================
-        // 6. KITS & HUD LOOPS
+        // 6. KILL FEED SYSTEM
+        // ==========================================
+        
+        // Funny R-rated kill messages
+        private List<string> GetFunnyKillMessages()
+        {
+            return new List<string>
+            {
+                "just got absolutely demolished",
+                "ate shit hard",
+                "got their ass handed to them",
+                "was fucking obliterated",
+                "got sent to the shadow realm",
+                "was turned into Swiss cheese",
+                "got their skull cracked open",
+                "got completely wrecked",
+                "was murdered in cold blood",
+                "got absolutely destroyed",
+                "got their face rearranged",
+                "was brutally executed",
+                "got dumpstered",
+                "was sent back to spawn",
+                "got clapped",
+                "got absolutely violated",
+                "was sent to the afterlife",
+                "got fucking annihilated",
+                "got their head taken off",
+                "was erased from existence"
+            };
+        }
+        
+        // Add kill to feed
+        private void AddKillToFeed(BasePlayer killer, BasePlayer victim)
+        {
+            if (killer == null || victim == null) return;
+            
+            string killerTeam = redTeam.Contains(killer.userID) ? "red" :
+                               blueTeam.Contains(killer.userID) ? "blue" : "black";
+            string victimTeam = redTeam.Contains(victim.userID) ? "red" :
+                               blueTeam.Contains(victim.userID) ? "blue" : "black";
+            
+            var messages = GetFunnyKillMessages();
+            string randomMessage = messages[UnityEngine.Random.Range(0, messages.Count)];
+            
+            var entry = new KillFeedEntry
+            {
+                KillerName = killer.displayName,
+                VictimName = victim.displayName,
+                KillerTeam = killerTeam,
+                VictimTeam = victimTeam,
+                Message = randomMessage,
+                Timestamp = Time.time
+            };
+            
+            killFeed.Insert(0, entry);
+            
+            // Keep only last 5 entries
+            if (killFeed.Count > MAX_KILL_FEED_ENTRIES)
+            {
+                killFeed.RemoveRange(MAX_KILL_FEED_ENTRIES, killFeed.Count - MAX_KILL_FEED_ENTRIES);
+            }
+            
+            // Update kill feed UI for all players
+            UpdateKillFeedForAll();
+            
+            // Auto-remove after 10 seconds
+            timer.Once(10f, () => {
+                if (killFeed.Contains(entry))
+                {
+                    killFeed.Remove(entry);
+                    UpdateKillFeedForAll();
+                }
+            });
+        }
+        
+        // Update kill feed UI for all players
+        private void UpdateKillFeedForAll()
+        {
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                if (redTeam.Contains(player.userID) || blueTeam.Contains(player.userID) || blackTeam.Contains(player.userID))
+                {
+                    ShowKillFeed(player);
+                }
+            }
+        }
+        
+        // Show kill feed UI
+        private void ShowKillFeed(BasePlayer player)
+        {
+            var container = new CuiElementContainer();
+            
+            float yPos = 0.85f; // Start from top
+            int index = 0;
+            
+            foreach (var entry in killFeed)
+            {
+                if (index >= MAX_KILL_FEED_ENTRIES) break;
+                
+                // Fade effect based on age
+                float age = Time.time - entry.Timestamp;
+                float alpha = Mathf.Clamp(1f - (age / 10f), 0.3f, 1f);
+                
+                // Get team colors
+                string killerColor = teamConfigs[entry.KillerTeam].HexColor;
+                string victimColor = teamConfigs[entry.VictimTeam].HexColor;
+                
+                // Background panel
+                container.Add(new CuiPanel
+                {
+                    Image = { Color = $"0.1 0.1 0.1 {0.8f * alpha}" },
+                    RectTransform = { AnchorMin = "0.01 " + (yPos - index * 0.05f - 0.045f), AnchorMax = "0.35 " + (yPos - index * 0.05f) }
+                }, "Hud", $"KillFeed_{index}");
+                
+                // Killer name (team colored)
+                container.Add(new CuiLabel
+                {
+                    Text = { 
+                        Text = entry.KillerName, 
+                        FontSize = 14, 
+                        Align = TextAnchor.MiddleLeft,
+                        Color = $"{GetColorFromHex(killerColor)} {alpha}",
+                        Font = "robotocondensed-bold.ttf"
+                    },
+                    RectTransform = { AnchorMin = "0.02 0.2", AnchorMax = "0.4 0.8" }
+                }, $"KillFeed_{index}");
+                
+                // Kill icon/message
+                container.Add(new CuiLabel
+                {
+                    Text = { 
+                        Text = "☠", 
+                        FontSize = 18, 
+                        Align = TextAnchor.MiddleCenter,
+                        Color = $"1 0 0 {alpha}"
+                    },
+                    RectTransform = { AnchorMin = "0.38 0.2", AnchorMax = "0.48 0.8" }
+                }, $"KillFeed_{index}");
+                
+                // Victim name (team colored)
+                container.Add(new CuiLabel
+                {
+                    Text = { 
+                        Text = entry.VictimName, 
+                        FontSize = 14, 
+                        Align = TextAnchor.MiddleLeft,
+                        Color = $"{GetColorFromHex(victimColor)} {alpha}",
+                        Font = "robotocondensed-bold.ttf"
+                    },
+                    RectTransform = { AnchorMin = "0.5 0.2", AnchorMax = "0.98 0.8" }
+                }, $"KillFeed_{index}");
+                
+                // Funny message subtitle
+                container.Add(new CuiLabel
+                {
+                    Text = { 
+                        Text = entry.Message, 
+                        FontSize = 10, 
+                        Align = TextAnchor.MiddleCenter,
+                        Color = $"0.8 0.8 0.8 {alpha * 0.7f}",
+                        Font = "robotocondensed-regular.ttf"
+                    },
+                    RectTransform = { AnchorMin = "0.02 0.0", AnchorMax = "0.98 0.25" }
+                }, $"KillFeed_{index}");
+                
+                index++;
+            }
+            
+            CuiHelper.DestroyUi(player, "KillFeedContainer");
+            if (container.Count > 0)
+            {
+                container.Add(new CuiPanel
+                {
+                    Image = { Color = "0 0 0 0" },
+                    RectTransform = { AnchorMin = "0 0", AnchorMax = "1 1" }
+                }, "Hud", "KillFeedContainer");
+                
+                CuiHelper.AddUi(player, container);
+            }
+        }
+        
+        // Helper to convert hex color to RGB
+        private string GetColorFromHex(string hex)
+        {
+            hex = hex.Replace("#", "");
+            int r = int.Parse(hex.Substring(0, 2), System.Globalization.NumberStyles.HexNumber);
+            int g = int.Parse(hex.Substring(2, 2), System.Globalization.NumberStyles.HexNumber);
+            int b = int.Parse(hex.Substring(4, 2), System.Globalization.NumberStyles.HexNumber);
+            return $"{r / 255f} {g / 255f} {b / 255f}";
+        }
+
+        // ==========================================
+        // 7. KITS & HUD LOOPS
         // ==========================================
         private void GiveKit(BasePlayer player, string role)
         {
@@ -1135,10 +1343,15 @@ namespace Oxide.Plugins
         {
             BaseEntity entity = go.ToBaseEntity();
             if (entity == null || player == null) return;
+            
+            // Only auto-destroy during active match
+            if (!matchStarted) return;
 
             // Auto-destroy ALL player-placed entities after 7 seconds
             string shortName = entity.ShortPrefabName ?? "";
             string fullName = entity.PrefabName ?? "";
+            
+            Puts($"[Entity Debug] Player {player.displayName} placed: {shortName} (Full: {fullName})");
             
             // Check if it's a deployable/buildable (barricades, walls, boxes, etc.)
             bool shouldDestroy = shortName.Contains("barricade") || 
@@ -1149,6 +1362,7 @@ namespace Oxide.Plugins
                                  shortName.Contains("deploy") ||
                                  shortName.Contains("box") ||
                                  shortName.Contains("shutter") ||
+                                 shortName.Contains("door") ||
                                  entity is BuildingBlock ||
                                  entity is Deployable;
             
@@ -1172,6 +1386,10 @@ namespace Oxide.Plugins
                 });
                 
                 entityTimers[entity.net.ID] = destroyTimer;
+            }
+            else
+            {
+                Puts($"[Entity Debug] Not destroying: {shortName}");
             }
         }
         
@@ -1199,6 +1417,12 @@ namespace Oxide.Plugins
                 if (player != null)
                 {
                     Puts($"[Death] Player {player.displayName} died, cleaning up corpse and items");
+                    
+                    // Add to kill feed if killed by another player during match
+                    if (matchStarted && info != null && info.InitiatorPlayer != null && info.InitiatorPlayer != player)
+                    {
+                        AddKillToFeed(info.InitiatorPlayer, player);
+                    }
                     
                     // Store player position for item cleanup
                     Vector3 deathPos = player.transform.position;
@@ -1440,6 +1664,13 @@ namespace Oxide.Plugins
             CallMiddleware($"EVENT: MATCH_END. Winner: {winnerTag}");
             if (activeBall != null) activeBall.Kill();
             gameActive = false;
+            
+            // Clear kill feed
+            killFeed.Clear();
+            foreach (var player in BasePlayer.activePlayerList)
+            {
+                CuiHelper.DestroyUi(player, "KillFeedContainer");
+            }
             
             // Trigger celebrations
             TriggerCelebrations(winner.ToLower());
