@@ -1408,9 +1408,9 @@ namespace Oxide.Plugins
             {
                 // Player is in sphere range
                 if (!lastSphereInteraction.ContainsKey(player.userID) || 
-                    Time.time - lastSphereInteraction[player.userID] > 3f)
+                    UnityEngine.Time.time - lastSphereInteraction[player.userID] > 3f)
                 {
-                    lastSphereInteraction[player.userID] = Time.time;
+                    lastSphereInteraction[player.userID] = UnityEngine.Time.time;
                     OnPlayerEnterSphere(player, team);
                 }
             }
