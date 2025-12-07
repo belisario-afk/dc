@@ -898,9 +898,15 @@ namespace Oxide.Plugins
                 float age = UnityEngine.Time.time - entry.Timestamp;
                 float alpha = Mathf.Clamp(1f - (age / 10f), 0.3f, 1f);
                 
-                // Get team colors
-                string killerColor = teamConfigs[entry.KillerTeam].HexColor;
-                string victimColor = teamConfigs[entry.VictimTeam].HexColor;
+                // Get team colors with safety checks (default to white if no team)
+                string killerColor = "#FFFFFF"; // Default white
+                string victimColor = "#FFFFFF"; // Default white
+                
+                if (!string.IsNullOrEmpty(entry.KillerTeam) && teamConfigs.ContainsKey(entry.KillerTeam))
+                    killerColor = teamConfigs[entry.KillerTeam].HexColor;
+                
+                if (!string.IsNullOrEmpty(entry.VictimTeam) && teamConfigs.ContainsKey(entry.VictimTeam))
+                    victimColor = teamConfigs[entry.VictimTeam].HexColor;
                 
                 // Background panel
                 container.Add(new CuiPanel
@@ -1408,11 +1414,35 @@ namespace Oxide.Plugins
         // Skip respawn screen - instant respawn
         object OnPlayerRespawnOnMap(BasePlayer player, Vector3 position)
         {
+            // If player is in match, let OnPlayerRespawn handle it
             if (matchStarted && (redTeam.Contains(player.userID) || blueTeam.Contains(player.userID) || blackTeam.Contains(player.userID)))
             {
-                // Skip respawn screen by respawning immediately
-                return null;
+                return null; // Skip respawn screen, OnPlayerRespawn will teleport to goal
             }
+            
+            // Otherwise, spawn at lobby if set
+            if (lobbySpawnPos != Vector3.zero)
+            {
+                Puts($"[LobbySpawn] Spawning player {player.displayName} at lobby spawn: {lobbySpawnPos}");
+                
+                NextTick(() => {
+                    if (player != null && player.IsConnected)
+                    {
+                        if (player.IsSleeping()) player.EndSleeping();
+                        
+                        player.MovePosition(lobbySpawnPos);
+                        player.ClientRPCPlayer(null, player, "ForcePositionTo", lobbySpawnPos);
+                        player.SendNetworkUpdateImmediate();
+                        
+                        Puts($"[LobbySpawn] Player {player.displayName} teleported to lobby");
+                    }
+                });
+                
+                return null; // Let spawn happen normally, we'll move them in NextTick
+            }
+            
+            Puts($"[LobbySpawn] ERROR: Lobby spawn not set! Player {player.displayName} will spawn at camera");
+            SendReply(player, "⚠ No lobby spawn set! Admin needs to run /set_lobby_spawn");
             return null;
         }
 
