@@ -723,9 +723,25 @@ namespace Oxide.Plugins
                 player.health = 200;
             }
             
-            // Force inventory and player network updates so other players can see the items and skins
+            // Force multiple network updates to ensure skins load properly
+            // Update each container individually
+            player.inventory.containerWear.MarkDirty();
+            player.inventory.containerBelt.MarkDirty();
+            player.inventory.containerMain.MarkDirty();
+            
+            // Force server update on inventory
             player.inventory.ServerUpdate(0f);
+            
+            // Send immediate network update
             player.SendNetworkUpdateImmediate();
+            
+            // Additional delayed update to ensure visibility
+            NextTick(() => {
+                if (player != null && player.IsConnected)
+                {
+                    player.SendNetworkUpdate();
+                }
+            });
         }
         
         private void GiveItemWithSkin(BasePlayer player, string itemName, int amount, ulong skinId, ItemContainer container)
@@ -733,7 +749,18 @@ namespace Oxide.Plugins
             Item item = ItemManager.CreateByName(itemName, amount, skinId);
             if (item != null)
             {
-                player.inventory.GiveItem(item, container);
+                // Explicitly set skin ID
+                item.skin = skinId;
+                
+                // Add item to inventory
+                if (player.inventory.GiveItem(item, container))
+                {
+                    // Mark item as dirty to force network update
+                    item.MarkDirty();
+                    
+                    // Force container update
+                    container.MarkDirty();
+                }
             }
             else
             {
