@@ -67,7 +67,9 @@ namespace Oxide.Plugins
 
         // IMAGES
         private string ImgScoreboardBg = "https://i.imgur.com/6Xq6x9q.png"; 
-        private string ImgGoalBanner = "https://i.imgur.com/Jb9y1Xm.png";   
+        private string ImgGoalBannerRedBlue = "https://i.imgur.com/Jb9y1Xm.png";
+        private string ImgGoalBannerBlackRed = "https://i.imgur.com/8KqZx4Y.png";
+        private string ImgGoalBannerBlueBlack = "https://i.imgur.com/5LmNp2X.png";
 
         [PluginReference] Plugin ImageLibrary;
         [PluginReference] Plugin Skins;
@@ -264,7 +266,9 @@ namespace Oxide.Plugins
             if (ImageLibrary != null)
             {
                 ImageLibrary.Call("AddImage", ImgScoreboardBg, "Soccer_Bar_BG");
-                ImageLibrary.Call("AddImage", ImgGoalBanner, "Soccer_Goal_Banner");
+                ImageLibrary.Call("AddImage", ImgGoalBannerRedBlue, "Soccer_Goal_Banner_RedBlue");
+                ImageLibrary.Call("AddImage", ImgGoalBannerBlackRed, "Soccer_Goal_Banner_BlackRed");
+                ImageLibrary.Call("AddImage", ImgGoalBannerBlueBlack, "Soccer_Goal_Banner_BlueBlack");
             }
         }
 
@@ -814,6 +818,18 @@ namespace Oxide.Plugins
 
         private void ShowGoalBanner(string team)
         {
+            // Determine which banner image to use based on current matchup
+            string bannerImage = "Soccer_Goal_Banner_RedBlue"; // Default: Red vs Blue
+            
+            if ((team1Playing == "black" && team2Playing == "red") || (team1Playing == "red" && team2Playing == "black"))
+            {
+                bannerImage = "Soccer_Goal_Banner_BlackRed";
+            }
+            else if ((team1Playing == "blue" && team2Playing == "black") || (team1Playing == "black" && team2Playing == "blue"))
+            {
+                bannerImage = "Soccer_Goal_Banner_BlueBlack";
+            }
+            
             string col = (team == "RED") ? "1 0.2 0.2" : (team == "BLUE") ? "0.2 0.4 1" : "0.8 0.8 0.8";
             string teamTag = (team == "RED") ? teamConfigs["red"].Tag : (team == "BLUE") ? teamConfigs["blue"].Tag : teamConfigs["black"].Tag;
             foreach (var p in BasePlayer.activePlayerList)
@@ -967,10 +983,10 @@ namespace Oxide.Plugins
             }
         }
 
-        void OnEntityBuilt(Planner plan, GameObject go)
+        void OnEntityBuilt(Planner plan, GameObject go, BasePlayer player)
         {
             BaseEntity entity = go.ToBaseEntity();
-            if (entity == null) return;
+            if (entity == null || player == null) return;
 
             // Auto-destroy barricades after 7 seconds
             if (entity.ShortPrefabName == "barricade.wood.cover")
