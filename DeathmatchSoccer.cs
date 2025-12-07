@@ -76,34 +76,37 @@ namespace Oxide.Plugins
         private Dictionary<string, TeamSkins> teamSkins = new Dictionary<string, TeamSkins>
         {
             { "blue", new TeamSkins { 
-                TshirtSkin = 0,      // Set custom skin ID for blue team tshirt
-                PantsSkin = 0,       // Set custom skin ID for blue team pants
-                TorsoSkin = 0,       // Set custom skin ID for blue team metal.plate.torso
-                FacemaskSkin = 0,    // Set custom skin ID for blue team metal.facemask
-                WeaponSkin = 0,      // Set custom skin ID for blue team thompson
-                GoaliePantsSkin = 0, // Set custom skin ID for blue goalie heavy.plate.pants
-                GoalieJacketSkin = 0,// Set custom skin ID for blue goalie heavy.plate.jacket
-                GoalieWeaponSkin = 0 // Set custom skin ID for blue goalie spas12
+                TshirtSkin = 3619180626,     // Blue team tshirt
+                PantsSkin = 3619368981,      // Blue team pants
+                TorsoSkin = 3619178918,      // Blue team metal.plate.torso
+                FacemaskSkin = 3619365504,   // Blue team metal.facemask
+                ShoesSkin = 3619430819,      // Blue team burlap.shoes
+                WeaponSkin = 0,              // Blue team thompson
+                GoaliePantsSkin = 0,         // Blue goalie heavy.plate.pants
+                GoalieJacketSkin = 0,        // Blue goalie heavy.plate.jacket
+                GoalieWeaponSkin = 0         // Blue goalie spas12
             }},
             { "red", new TeamSkins { 
-                TshirtSkin = 0,      
-                PantsSkin = 0,       
-                TorsoSkin = 0,       
-                FacemaskSkin = 0,    
-                WeaponSkin = 0,      
-                GoaliePantsSkin = 0, 
-                GoalieJacketSkin = 0,
-                GoalieWeaponSkin = 0 
+                TshirtSkin = 3619182996,     // Red team tshirt
+                PantsSkin = 3619357729,      // Red team pants
+                TorsoSkin = 3619182046,      // Red team metal.plate.torso
+                FacemaskSkin = 3619366404,   // Red team metal.facemask
+                ShoesSkin = 3619432687,      // Red team burlap.shoes
+                WeaponSkin = 0,              // Red team thompson
+                GoaliePantsSkin = 0,         // Red goalie heavy.plate.pants
+                GoalieJacketSkin = 0,        // Red goalie heavy.plate.jacket
+                GoalieWeaponSkin = 0         // Red goalie spas12
             }},
             { "black", new TeamSkins { 
-                TshirtSkin = 0,      
-                PantsSkin = 0,       
-                TorsoSkin = 0,       
-                FacemaskSkin = 0,    
-                WeaponSkin = 0,      
-                GoaliePantsSkin = 0, 
-                GoalieJacketSkin = 0,
-                GoalieWeaponSkin = 0 
+                TshirtSkin = 3618727245,     // Black team tshirt
+                PantsSkin = 3619358770,      // Black team pants
+                TorsoSkin = 3619177448,      // Black team metal.plate.torso
+                FacemaskSkin = 3619364394,   // Black team metal.facemask
+                ShoesSkin = 3619429117,      // Black team burlap.shoes
+                WeaponSkin = 0,              // Black team thompson
+                GoaliePantsSkin = 0,         // Black goalie heavy.plate.pants
+                GoalieJacketSkin = 0,        // Black goalie heavy.plate.jacket
+                GoalieWeaponSkin = 0         // Black goalie spas12
             }}
         };
         
@@ -113,6 +116,7 @@ namespace Oxide.Plugins
             public ulong PantsSkin { get; set; }
             public ulong TorsoSkin { get; set; }
             public ulong FacemaskSkin { get; set; }
+            public ulong ShoesSkin { get; set; }
             public ulong WeaponSkin { get; set; }
             public ulong GoaliePantsSkin { get; set; }
             public ulong GoalieJacketSkin { get; set; }
@@ -633,6 +637,7 @@ namespace Oxide.Plugins
                 GiveItemWithSkin(player, "pants", 1, skins.PantsSkin, player.inventory.containerWear);
                 GiveItemWithSkin(player, "metal.plate.torso", 1, skins.TorsoSkin, player.inventory.containerWear);
                 GiveItemWithSkin(player, "metal.facemask", 1, skins.FacemaskSkin, player.inventory.containerWear);
+                GiveItemWithSkin(player, "burlap.shoes", 1, skins.ShoesSkin, player.inventory.containerWear);
                 GiveItemWithSkin(player, "smg.thompson", 1, skins.WeaponSkin, player.inventory.containerBelt);
                 player.inventory.GiveItem(ItemManager.CreateByName("syringe.medical", 5), player.inventory.containerMain);
                 player.inventory.GiveItem(ItemManager.CreateByName("barricade.wood.cover", 3), player.inventory.containerMain);
@@ -646,6 +651,7 @@ namespace Oxide.Plugins
                 GiveItemWithSkin(player, "heavy.plate.pants", 1, skins.GoaliePantsSkin, player.inventory.containerWear);
                 GiveItemWithSkin(player, "heavy.plate.jacket", 1, skins.GoalieJacketSkin, player.inventory.containerWear);
                 GiveItemWithSkin(player, "metal.facemask", 1, skins.FacemaskSkin, player.inventory.containerWear);
+                GiveItemWithSkin(player, "burlap.shoes", 1, skins.ShoesSkin, player.inventory.containerWear);
                 GiveItemWithSkin(player, "shotgun.spas12", 1, skins.GoalieWeaponSkin, player.inventory.containerBelt);
                 player.inventory.GiveItem(ItemManager.CreateByName("syringe.medical", 10), player.inventory.containerMain);
                 player.inventory.GiveItem(ItemManager.CreateByName("ammo.shotgun", 64), player.inventory.containerMain);
@@ -958,6 +964,24 @@ namespace Oxide.Plugins
                     entity.GetComponent<Rigidbody>()?.AddForce(dir * KickForceMultiplier, ForceMode.Impulse);
                     Effect.server.Run("assets/bundled/prefabs/fx/impacts/additive/metal.prefab", entity.transform.position);
                 }
+            }
+        }
+
+        void OnEntityBuilt(Planner plan, GameObject go)
+        {
+            BaseEntity entity = go.ToBaseEntity();
+            if (entity == null) return;
+
+            // Auto-destroy barricades after 7 seconds
+            if (entity.ShortPrefabName == "barricade.wood.cover")
+            {
+                timer.Once(7f, () =>
+                {
+                    if (entity != null && !entity.IsDestroyed)
+                    {
+                        entity.Kill();
+                    }
+                });
             }
         }
 
